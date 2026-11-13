@@ -10,6 +10,7 @@ const BASE = "http://127.0.0.1:" + PORT;
 const child = spawn(process.execPath, [path.join(HERE, "jcp.mjs"), "gui", "--no-open", "--port", String(PORT)], {
   cwd: HERE,
   stdio: ["ignore", "pipe", "pipe"],
+  env: Object.assign({}, process.env, { JCP_SAVE_DIR: path.join(HERE, "build") }),
 });
 child.stdout.on("data", (d) => process.stdout.write("[gui] " + d));
 child.stderr.on("data", (d) => process.stderr.write("[gui!] " + d));
@@ -37,6 +38,12 @@ try {
   const png = await post("/api/png", { src: d.source, title: "龜卜龜食" });
   console.log("png:", png.ok, png.png ? png.png.length : png.error);
   if (png.ok) fs.writeFileSync(path.join(HERE, "build", "gui-test.png"), Buffer.from(png.png.split(",")[1], "base64"));
+  const save = await post("/api/png-save", { src: d.source, title: "龜卜龜食" });
+  console.log("save:", JSON.stringify({ ok: save.ok, path: save.path, size: save.png ? save.png.length : 0, error: save.error }));
+  if (save.ok) {
+    const buf = fs.readFileSync(save.path);
+    console.log("saveFile:", buf.subarray(0, 8).toString("hex") === "89504e470d0a1a0a" ? "PNG-OK" : "NOT-PNG", buf.length);
+  }
 } catch (e) {
   console.error("ERR", e.message);
 } finally {

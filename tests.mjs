@@ -48,6 +48,10 @@ const CASES = [
   { name: "止 break", file: "t-break.jcp", expect: { code: 0, out: ["到五", "5"] } },
   { name: "且/或", file: "t-logic.jcp", expect: { code: 0, out: ["且", "或"] } },
   { name: "续 continue", file: "t-continue.jcp", expect: { code: 0, out: ["1\n2\n4\n5", "完", "0\n1\n3\n4"] } },
+  { name: "模块 引 學", file: "t-module.jcp", expect: { code: 0, out: ["5\n3\n16\n7\n1"] } },
+  { name: "常量 恒", file: "t-const.jcp", expect: { code: 0, out: ["8", "9"] } },
+  { name: "常量不可赋值", file: "t-const-err.jcp", expect: { code: 3, err: ["常量「甲」不可赋值"] } },
+  { name: "标准库 引 學/兆", file: "t-stdlib.jcp", expect: { code: 0, out: ["9", "12"] } },
   { name: "自动生成程序PNG", png: true, expect: { code: 0, out: ["已生成"] } },
   { name: "GUI 本地服务", helper: "test-gui.mjs", expect: { code: 0, out: ["run:", "\"ok\":true"] } },
 ];

@@ -10,6 +10,7 @@
  *   内建：屏() 清屏 · 书(值) 原样输出（不换行）· 听() 读一键 · 歇(毫秒) 等待
  *   数字：一…十（也接受 0-9）  字符串：「…」  注释：；开头
  *   算子：隹 赋值/相等（＝）  益 加（＋）  去 减（－）  乘 乘（×）  分 除（÷）  不隹 不等（≠）
+ *   模块：引 學;（lib/學.jcp）    常量：恒 名 隹 值;
  *         < > <= >= && || % 仍用符号（旧写法 = + - * / == != 仍兼容）
  *
  * 流水线：词法 → 语法树 → 语义检查 → JCB1 字节码 → 异步虚拟机执行
@@ -26,7 +27,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = process.env.JCP_BUILD || path.join(HERE, "build");
 
 /* ---------------------------- 现代编译器基础设施 ---------------------------- */
-const VERSION = "0.7.0";
+const VERSION = "0.8.0";
 const COLOR = !!process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (s, code) => (COLOR ? "\x1b[" + code + "m" + s + "\x1b[0m" : s);
 
@@ -63,7 +64,7 @@ function loadFontSet() {
 const FONT = loadFontSet();
 
 /* ---------------------------- 词法 ---------------------------- */
-const KW = { 量: "int", 無: "void", 歸: "return", 若: "if", 弗: "else", 復: "while", 從: "for", 言: "print", 卜: "assert", 止: "break", 续: "continue" };
+const KW = { 量: "int", 無: "void", 歸: "return", 若: "if", 弗: "else", 復: "while", 從: "for", 言: "print", 卜: "assert", 止: "break", 续: "continue", 恒: "const", 引: "import" };
 const NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 吉: 1 };
 const NUMERAL_CHARS = "零一二三四五六七八九十百千兩";
 const DIGIT = { 零: 0, 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
@@ -173,6 +174,12 @@ function parse(toks) {
       if (at("op", "=") || at("op", "隹")) { p++; init = expr(); }
       eat("op", ";");
       return { t: "decl", name, init };
+    }
+    if (at("kw", "恒")) {
+      p++; const name = eat("id").v;
+      if (!(at("op", "隹") || at("op", "="))) fail("常量声明需要 隹 初始值");
+      p++; const init = expr(); eat("op", ";");
+      return { t: "constdecl", name, init };
     }
     if (at("kw", "言") || at("kw", "卜")) {
       const kind = toks[p++].v;
@@ -308,8 +315,12 @@ function parse(toks) {
     return { t: "func", ret: ty, name, params, body: block() };
   }
   const funcs = [];
-  while (!at("eof")) funcs.push(top());
-  return { t: "program", funcs };
+  const imports = [];
+  while (!at("eof")) {
+    if (at("kw", "引")) { p++; const name = eat("id").v; eat("op", ";"); imports.push(name); continue; }
+    funcs.push(top());
+  }
+  return { t: "program", funcs, imports };
 }
 
 /* ---------------------------- 语义检查 ---------------------------- */
@@ -372,6 +383,11 @@ function check(ast) {
         scope.set(s.name, "int");
         if (s.init) walkExpr(s.init, scope);
         decls++;
+      } else if (s.t === "constdecl") {
+        if (scope.has(s.name)) throw new Error(`语义：名字重复声明「${s.name}」`);
+        walkExpr(s.init, scope);
+        scope.set(s.name, "const");
+        decls++;
       } else if (s.t === "arrdecl") {
         if (scope.has(s.name)) throw new Error(`语义：变量重复声明「${s.name}」`);
         walkExpr(s.size, scope);
@@ -383,6 +399,7 @@ function check(ast) {
           const k = scope.get(t.v);
           if (!k) throw new Error(`语义：未声明的变量「${t.v}」`);
           if (k === "arr") throw new Error(`语义：不能整体赋值数组「${t.v}」`);
+          if (k === "const") throw new Error(`语义：常量「${t.v}」不可赋值`);
           if (s.op !== "=") throw new Error("语义：暂不支持复合赋值（用 名 = 名 + 值）");
         } else {
           const k = scope.get(t.name);
@@ -420,6 +437,7 @@ function check(ast) {
             const k = inner.get(s.step.name);
             if (!k) throw new Error(`语义：未声明的变量「${s.step.name}」`);
             if (k === "arr") throw new Error(`语义：不能整体赋值数组「${s.step.name}」`);
+            if (k === "const") throw new Error(`语义：常量「${s.step.name}」不可赋值`);
             walkExpr(s.step.value, new Map(inner));
           } else walkExpr(s.step, new Map(inner));
         }
@@ -500,7 +518,7 @@ function compile(ast, funcs) {
 
   function stmts(ch, body, scope) {
     for (const s of body) {
-      if (s.t === "decl") {
+      if (s.t === "decl" || s.t === "constdecl") {
         const slot = slotCount++;
         scope.set(s.name, slot);
         if (s.init) { expr(ch, s.init, scope); emit(ch, OP.STORE, slot); }
@@ -607,7 +625,7 @@ function compile(ast, funcs) {
   }
 
   for (const f of ast.funcs) {
-    const ch = { name: f.name, code: [], params: f.params.length };
+    const ch = { name: f.name, code: [], params: f.params.length, paramBase: slotCount };
     const scope = new Map();
     f.params.forEach((x) => scope.set(x.name, slotCount++));
     stmts(ch, f.body.body, scope);
@@ -704,7 +722,8 @@ async function vm(prog, opts = {}) {
   async function runFn(chunk, args) {
     if (++depth > MAX_DEPTH) throw new Error("运行：调用层级过深（可能递归无终止）");
     const frame = { locals: new Array(chunk.nlocals).fill(0) };
-    for (let i = 0; i < args.length && i < chunk.params; i++) frame.locals[i] = args[i];
+    const pb = chunk.paramBase || 0;
+    for (let i = 0; i < args.length && i < chunk.params; i++) frame.locals[pb + i] = args[i];
     let pc = 0;
     try {
       for (;;) {
@@ -1035,14 +1054,44 @@ body{background:radial-gradient(1300px 700px at 50% 46%,#342b1f 0%,#1d1811 55%,#
 }
 
 /* ---------------------------- 编译管线（供 CLI 与工作台共用） ---------------------------- */
-function buildProgram(src) {
-  const srcLines = src.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith("；"));
+function resolveModule(name, baseDir) {
+  const cands = [];
+  if (baseDir) {
+    cands.push(path.join(baseDir, name + ".jcp"));
+    cands.push(path.join(baseDir, "lib", name + ".jcp"));
+  }
+  cands.push(path.join(HERE, "lib", name + ".jcp"));
+  cands.push(path.join(process.cwd(), "lib", name + ".jcp"));
+  for (const p of cands) { try { if (fs.existsSync(p)) return { path: p }; } catch (e) {} }
+  if (globalThis.__JCP_STDLIB && globalThis.__JCP_STDLIB[name]) return { virtual: true, src: globalThis.__JCP_STDLIB[name] };
+  return null;
+}
+function loadProgram(src, srcPath, seen = new Set()) {
   const toks = lex(src);
   const ast = parse(toks);
-  const sem = check(ast);
-  const prog = compile(ast, sem.funcs);
+  const funcs = [];
+  for (const name of ast.imports || []) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const r = resolveModule(name, srcPath ? path.dirname(path.resolve(srcPath)) : null);
+    if (!r) throw new CompileError("找不到模块「" + name + "」（放到 lib/" + name + ".jcp）", 1, 1);
+    const msrc = r.virtual ? r.src : fs.readFileSync(r.path, "utf8");
+    const mast = loadProgram(msrc, r.virtual ? null : r.path, seen);
+    for (const f of mast.funcs) {
+      if (f.name === "貞") throw new CompileError("模块「" + name + "」不能定义入口函数 貞", 1, 1);
+      funcs.push(f);
+    }
+  }
+  funcs.push(...ast.funcs);
+  return { funcs, toks, ast: { t: "program", funcs, imports: [] } };
+}
+function buildProgram(src, srcPath) {
+  const srcLines = src.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith("；"));
+  const loaded = loadProgram(src, srcPath);
+  const sem = check(loaded.ast);
+  const prog = compile(loaded.ast, sem.funcs);
   const jcb = listing(prog);
-  return { srcLines, toks, ast, sem, prog, jcb };
+  return { srcLines, toks: loaded.toks, ast: loaded.ast, sem, prog, jcb };
 }
 
 /* ---------------------------- 一体化工作台：编写 · 编译 · 运行 ---------------------------- */
@@ -1182,7 +1231,7 @@ async function workbench() {
       }
       if (verb === "jcb" || verb === "run") {
         if (!src.trim()) { console.log("   （空）"); continue; }
-        const built = buildProgram(src);
+        const built = buildProgram(src, path.join(HERE, "workbench.jcp"));
         const nIns = built.prog.chunks.reduce((n, c) => n + c.code.length, 0);
         console.log("   詞法 " + built.toks.length + " 令牌 · 語法 " + built.ast.funcs.length + " 函數 · 語義 " + built.sem.decls + " 聲明");
         console.log("   字節碼 " + nIns + " 條 · 槽位 " + built.prog.slotCount + " · 字符串 " + built.prog.strings.length);
@@ -1238,7 +1287,18 @@ button.primary{background:var(--rust);border-color:var(--rust);color:#fdf6e8}
 button.primary:hover{filter:brightness(1.08)}
 button.gen{background:var(--green);border-color:var(--green);color:#f2fbf5}
 select{font:inherit;font-size:12px;padding:5px 8px;border-radius:7px;border:1px solid rgba(120,96,64,.38);background:#fffaf0;color:var(--ink);max-width:190px}
-textarea{flex:1;min-height:180px;border:0;outline:none;resize:none;padding:10px 12px;background:transparent;color:#2b2118;font:13.5px/1.75 ui-monospace,Consolas,"Courier New",monospace;tab-size:4}
+.editor{flex:1;display:flex;min-height:0;background:#fffaf0;overflow:hidden}
+.gutter{width:46px;padding:10px 6px 10px 0;text-align:right;font:13.5px/1.75 ui-monospace,Consolas,"Courier New",monospace;color:#a08a68;background:rgba(120,96,64,.09);overflow:hidden;user-select:none;flex-shrink:0}
+.gutter div{height:23.63px}
+.codebox{position:relative;flex:1;min-height:0;overflow:hidden}
+.codebox pre{position:absolute;inset:0;margin:0;padding:10px 12px;overflow:auto;pointer-events:none;font:13.5px/1.75 ui-monospace,Consolas,"Courier New",monospace;white-space:pre-wrap;word-break:break-all;color:#2b2118;background:transparent;tab-size:4}
+.codebox textarea{position:absolute;inset:0;width:100%;height:100%;padding:10px 12px;border:0;outline:none;resize:none;background:transparent;color:transparent;caret-color:#8a3a22;font:13.5px/1.75 ui-monospace,Consolas,"Courier New",monospace;white-space:pre-wrap;word-break:break-all;tab-size:4}
+.tok-kw{color:#8a3a22;font-weight:600}
+.tok-op{color:#2f5d43;font-weight:600}
+.tok-num{color:#7a4a12}
+.tok-str{color:#2f4a6b}
+.tok-cmt{color:#9a8a6a;font-style:italic}
+.tok-fn{color:#4a3f7a}
 .row{display:flex;gap:8px;padding:8px 10px;border-top:1px solid rgba(120,96,64,.18);align-items:center}
 .row label{font-size:11px;color:var(--brown)}
 .row input{flex:1;border:1px solid rgba(120,96,64,.3);border-radius:6px;padding:5px 8px;font:12px ui-monospace,monospace;background:#fffaf0;color:var(--ink);outline:none}
@@ -1246,7 +1306,7 @@ textarea{flex:1;min-height:180px;border:0;outline:none;resize:none;padding:10px 
 .tab{font-size:11px;padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid transparent;cursor:pointer;color:#7a6648}
 .tab.on{background:#241d14;color:#e9e0cc;border-color:#241d14}
 pre{flex:1;min-height:120px;margin:0;padding:10px 12px;overflow:auto;font:12px/1.65 ui-monospace,Consolas,monospace;background:#241d14;color:#e8e0cc;white-space:pre-wrap}
-.stats{padding:6px 10px;font-size:11px;color:var(--brown);border-bottom:1px solid rgba(120,96,64,.18);min-height:26px}
+.stats{padding:6px 10px;font-size:11px;color:var(--brown);border-bottom:1px solid rgba(120,96,64,.18);min-height:26px;word-break:break-all}
 .err{color:#b23a2a}
 .ok{color:#2f6b47}
 .oracle{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:row-reverse;gap:9px;align-items:flex-start;background:radial-gradient(120% 60% at 40% 10%,#fdf8ea,#f0e3ca 60%,#e4d0ac);border-radius:0 0 12px 12px}
@@ -1254,29 +1314,34 @@ pre{flex:1;min-height:120px;margin:0;padding:10px 12px;overflow:auto;font:12px/1
 .vcol .zi{font-family:"Oracular",ui-serif,serif;font-size:23px;line-height:1.12;color:#2e1f0e;text-shadow:0 1px 0 rgba(255,252,240,.7)}
 .vcol .mk{width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:#4a3622;font:15px ui-monospace,monospace}
 .vcol .gap{height:8px}
-#pngWrap{flex:1;display:none;align-items:center;justify-content:center;background:#1c1710;overflow:auto}
+#pngWrap{flex:1;display:none;align-items:center;justify-content:center;background:#1c1710;overflow:auto;position:relative}
 #png{max-width:100%;max-height:100%;object-fit:contain}
-.hint{font-size:11px;color:#9d8a6d;padding:8px 12px}
-kbd{border:1px solid rgba(180,150,110,.3);border-radius:4px;padding:0 4px;font-size:10px}
 footer{padding:6px 16px 10px;font-size:11px;color:#8d7a5c}
 </style></head><body>
 <header>
   <div class="brand">甲 骨 <b>C++</b> · GUI</div>
   <div class="sub">本地编译器服务 · v${version}</div>
-  <div class="chips"><span class="chip" id="chipState">就绪</span><span class="chip">隹 / 益 / 去 / 乘 / 分</span><span class="chip">止 / 续</span></div>
+  <div class="chips"><span class="chip" id="chipState">就绪</span><span class="chip">恒 / 引 / 模块</span><span class="chip">行号 · 高亮</span></div>
 </header>
 <main>
   <section class="panel">
-    <h2>源码 <span class="mini">Ctrl+Enter 运行 · Ctrl+G 出图</span></h2>
+    <h2>源码 <span class="mini">Ctrl+Enter 运行 · Ctrl+G 出图 · 支持 引 模块 / 恒 常量</span></h2>
     <div class="toolbar">
       <select id="examples"><option value="">— 载入示例 —</option></select>
       <button id="btnRun" class="primary">运行</button>
       <button id="btnCheck">检查</button>
       <button id="btnPng" class="gen">生成甲骨图</button>
+      <button id="btnSavePng">保存 PNG 到桌面</button>
       <button id="btnClear">清空</button>
     </div>
     <div class="row"><label>输入（给 听 用）</label><input id="stdin" placeholder="如 dddddq（贪吃蛇按键）"></div>
-    <textarea id="src" spellcheck="false"></textarea>
+    <div class="editor">
+      <div class="gutter" id="gutter"></div>
+      <div class="codebox">
+        <pre id="hl" aria-hidden="true"></pre>
+        <textarea id="src" spellcheck="false"></textarea>
+      </div>
+    </div>
   </section>
   <section class="panel">
     <h2>输出 / 字节码 / 甲骨预览 <span class="mini" id="stats">—</span></h2>
@@ -1290,18 +1355,48 @@ footer{padding:6px 16px 10px;font-size:11px;color:#8d7a5c}
     <pre id="out">点「运行」编译并在内置虚拟机里跑。</pre>
     <pre id="jcb" style="display:none"></pre>
     <div class="oracle" id="oracle" style="display:none"></div>
-    <div id="pngWrap"><img id="png" alt="甲骨程序图"><a id="dl" download="jiagu.png" style="position:absolute;margin:10px;color:#d8b26a;font-size:12px">下载 PNG</a></div>
+    <div id="pngWrap"><img id="png" alt="甲骨程序图"><a id="dl" download="jiagu.png" style="position:absolute;top:8px;right:12px;color:#d8b26a;font-size:12px">下载 PNG</a></div>
   </section>
 </main>
-<footer>本地服务 · 仅监听 127.0.0.1 · 自动出图需要本机 Edge/Chrome</footer>
+<footer>本地服务 · 仅监听 127.0.0.1 · 自动出图需要本机 Edge/Chrome · 保存 PNG 默认写到桌面</footer>
 <script>
 var FONT = new Set(Array.from(${JSON.stringify(fontChars)}));
 var els = function(id){ return document.getElementById(id); };
 var srcEl = els("src"), outEl = els("out"), jcbEl = els("jcb"), oracleEl = els("oracle"), lineEl = els("line"), statsEl = els("stats"), chip = els("chipState");
-var pngWrap = els("pngWrap"), pngEl = els("png"), dlEl = els("dl");
+var pngWrap = els("pngWrap"), pngEl = els("png"), dlEl = els("dl"), hlEl = els("hl"), gutterEl = els("gutter");
+var KW_SET = new Set(["量","無","歸","若","弗","復","從","言","卜","止","续","恒","引","吉","貞"]);
+var OP_SET = new Set(["隹","益","去","乘","分","不","且","或"]);
+var NUM_SET = new Set(["零","一","二","三","四","五","六","七","八","九","十","百","千","兩"]);
 function setChip(t, ok){ chip.textContent = t; chip.style.background = ok ? "rgba(47,93,67,.55)" : "rgba(138,43,26,.5)"; }
 function esc(s){ return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
 function markFor(ch){ return '<span class="mk">' + esc(ch === " " ? "·" : ch) + '</span>'; }
+function highlightLine(line){
+  var s = "", j = 0;
+  while (j < line.length) {
+    var ch = line[j];
+    if (ch === "；" || (ch === "/" && line[j + 1] === "/")) { s += '<span class="tok-cmt">' + esc(line.slice(j)) + '</span>'; break; }
+    if (ch === "「") {
+      var k = line.indexOf("」", j + 1);
+      if (k < 0) k = line.length;
+      s += '<span class="tok-str">' + esc(line.slice(j, k + 1)) + '</span>';
+      j = k + 1; continue;
+    }
+    if (/[0-9]/.test(ch)) {
+      var m = j; while (m < line.length && /[0-9]/.test(line[m])) m++;
+      s += '<span class="tok-num">' + line.slice(j, m) + '</span>'; j = m; continue;
+    }
+    if (/[\\u4e00-\\u9fff]/.test(ch)) {
+      var cls = KW_SET.has(ch) ? "tok-kw" : (OP_SET.has(ch) ? "tok-op" : (NUM_SET.has(ch) ? "tok-num" : "tok-fn"));
+      s += '<span class="' + cls + '">' + ch + '</span>'; j++; continue;
+    }
+    if (/[=+\\-*\\/%<>!&|]/.test(ch)) {
+      var m2 = j; while (m2 < line.length && /[=+\\-*\\/%<>!&|]/.test(line[m2])) m2++;
+      s += '<span class="tok-op">' + esc(line.slice(j, m2)) + '</span>'; j = m2; continue;
+    }
+    s += esc(ch); j++;
+  }
+  return s;
+}
 function renderOracle(src){
   var lines = src.split(/\\r?\\n/).filter(function(l){ return l.length > 0; });
   var html = "";
@@ -1316,6 +1411,19 @@ function renderOracle(src){
     html += '<div class="vcol">' + col + '</div>';
   }
   oracleEl.innerHTML = html;
+}
+function updateEditor(){
+  var src = srcEl.value;
+  var lines = src.split("\\n");
+  hlEl.innerHTML = lines.map(highlightLine).join("\\n") + "\\n";
+  var g = "";
+  for (var i = 1; i <= lines.length; i++) g += "<div>" + i + "</div>";
+  gutterEl.innerHTML = g;
+  renderOracle(src);
+}
+function syncScroll(){
+  hlEl.scrollTop = srcEl.scrollTop; hlEl.scrollLeft = srcEl.scrollLeft;
+  gutterEl.scrollTop = srcEl.scrollTop;
 }
 function showTab(name){
   document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("on", t.getAttribute("data-tab") === name); });
@@ -1357,10 +1465,20 @@ async function doPng(){
     pngEl.src = d.png; dlEl.href = d.png; showTab("pngtab"); setChip("已生成 PNG", true);
   } catch (e) { setChip("出错", false); }
 }
-document.querySelectorAll("[data-tab]").forEach(function(){}); 
-els("btnRun").onclick = doRun; els("btnCheck").onclick = doCheck; els("btnPng").onclick = doPng;
-els("btnClear").onclick = function(){ srcEl.value = ""; renderOracle(""); };
-srcEl.addEventListener("input", function(){ renderOracle(srcEl.value); });
+async function doSavePng(){
+  setChip("保存中…", false);
+  try {
+    var d = await api("/api/png-save", { src: srcEl.value, title: "龜卜龜食" });
+    if (!d.ok) { outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; setChip("保存失败", false); return; }
+    lineEl.textContent = "已保存：" + d.path;
+    setChip("已保存到桌面", true);
+    if (d.png) { pngEl.src = d.png; dlEl.href = d.png; showTab("pngtab"); }
+  } catch (e) { setChip("保存失败", false); }
+}
+els("btnRun").onclick = doRun; els("btnCheck").onclick = doCheck; els("btnPng").onclick = doPng; els("btnSavePng").onclick = doSavePng;
+els("btnClear").onclick = function(){ srcEl.value = ""; updateEditor(); };
+srcEl.addEventListener("input", updateEditor);
+srcEl.addEventListener("scroll", syncScroll);
 srcEl.addEventListener("keydown", function(e){
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); doRun(); }
   if ((e.ctrlKey || e.metaKey) && (e.key === "g" || e.key === "G")) { e.preventDefault(); doPng(); }
@@ -1372,14 +1490,15 @@ function loadExamples(){
     sel.onchange = function(){
       if (!sel.value) return;
       fetch("/api/load?name=" + encodeURIComponent(sel.value)).then(function(r){ return r.json(); }).then(function(d){
-        if (d.ok) { srcEl.value = d.source; renderOracle(d.source); setChip("已载入 " + d.name, true); }
+        if (d.ok) { srcEl.value = d.source; updateEditor(); setChip("已载入 " + d.name, true); }
       });
     };
   });
 }
 loadExamples();
-fetch("/api/default").then(function(r){ return r.json(); }).then(function(d){ if (d.ok) { srcEl.value = d.source; renderOracle(d.source); } });
-</script></body></html>`;
+fetch("/api/default").then(function(r){ return r.json(); }).then(function(d){ if (d.ok) { srcEl.value = d.source; updateEditor(); } });
+</script></body></html>
+`;
 
 const MIME = {
   ".png": "image/png"
@@ -1420,7 +1539,7 @@ async function startGui(argv) {
     return fs.readFileSync(f, "utf8");
   };
   const gui = async (src) => {
-    const built = buildProgram(src);
+    const built = buildProgram(src, path.join(HERE, "gui.jcp"));
     const r = await vm(built.prog, { input: "", silent: true });
     return {
       ok: true,
@@ -1459,12 +1578,30 @@ async function startGui(argv) {
         catch (e) { json(res, 200, { ok: false, error: e.message }); }
         return;
       }
-      if (req.method === "POST" && (url.pathname === "/api/run" || url.pathname === "/api/check" || url.pathname === "/api/png")) {
+      if (req.method === "POST" && (url.pathname === "/api/run" || url.pathname === "/api/check" || url.pathname === "/api/png" || url.pathname === "/api/png-save")) {
         const body = JSON.parse((await readBody(req)) || "{}");
         const src = String(body.src || "");
+        if (url.pathname === "/api/png-save") {
+          try {
+            const tmp = path.join(BUILD_DIR, "gui-save-" + Date.now() + ".png");
+            await generatePng(src, { out: tmp, title: body.title || "龜卜龜食", srcPath: "gui.jcp" });
+            const home = process.env.USERPROFILE || ((process.env.HOMEDRIVE || "") + (process.env.HOMEPATH || ""));
+            let dir = process.env.JCP_SAVE_DIR || path.join(home, "Desktop");
+            try { if (!fs.existsSync(dir)) dir = BUILD_DIR; } catch (e) { dir = BUILD_DIR; }
+            fs.mkdirSync(dir, { recursive: true });
+            const d = new Date();
+            const pad = (n) => String(n).padStart(2, "0");
+            const stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "-" + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+            const outPath = path.join(dir, "甲骨-" + stamp + ".png");
+            fs.copyFileSync(tmp, outPath);
+            const b64 = fs.readFileSync(outPath).toString("base64");
+            json(res, 200, { ok: true, path: outPath, png: "data:image/png;base64," + b64 });
+          } catch (e) { json(res, 200, diagOf(e)); }
+          return;
+        }
         if (url.pathname === "/api/check") {
           try {
-            const built = buildProgram(src);
+            const built = buildProgram(src, path.join(HERE, "gui.jcp"));
             json(res, 200, { ok: true, tokens: built.toks.length - 1, ins: built.prog.chunks.reduce((n, c) => n + c.code.length, 0), slots: built.prog.slotCount });
           } catch (e) { json(res, 200, diagOf(e)); }
           return;
@@ -1497,9 +1634,14 @@ async function startGui(argv) {
   console.log("  " + paint("Ctrl+C 退出", "2"));
   if (!noOpen) {
     try {
-      const opener = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["open", [url]];
-      const child = spawnSync(opener[0], opener[1], { stdio: "ignore", timeout: 5000 });
-      if (child.error) console.log("  请手动打开：" + url);
+      const br = findBrowser();
+      if (br) {
+        const child = spawnSync(br, ["--app=" + url, "--new-window"], { stdio: "ignore", timeout: 5000 });
+        if (child.error) console.log("  请手动打开：" + url);
+      } else {
+        const opener = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["open", [url]];
+        spawnSync(opener[0], opener[1], { stdio: "ignore", timeout: 5000 });
+      }
     } catch (e) {}
   }
   await new Promise(() => {});
@@ -1518,7 +1660,7 @@ function printHelp() {
   console.log("    jcp check <源.jcp>        只做词法/语法/语义/字节码检查");
   console.log("    jcp build <源.jcp>        只生成 JCB1 字节码");
   console.log("    jcp repl                  进入一体机（编写 · 编译 · 运行）");
-  console.log("    jcp gui [--port 7801]     打开图形界面（本地 Web GUI，默认自动开浏览器）");
+  console.log("    jcp gui [--port 7801]     打开图形界面（本地 Web GUI，默认应用窗口打开）");
   console.log("    jcp examples              列出内置示例");
   console.log("    jcp png <源.jcp> [-o 输出.png] [--title …]   自动生成甲骨程序图");
   console.log("    jcp version               版本");
@@ -1535,6 +1677,8 @@ function printHelp() {
   console.log("    言 输出   卜 占断     吉 1       貞 入口");
   console.log("    隹 赋值/相等（＝）     益 加（＋）   去 减（－）   乘 乘（×）   分 除（÷）");
   console.log("    不隹 不等（≠）   且/或 与/或（&& ||）   止 break   续 continue");
+  console.log("    引 模块名（lib/模块名.jcp）    恒 常量 隹 值");
+  console.log("    标准库：引 學;（大 小 方 正 余）  引 卜;（卜 隨機）");
   console.log("    多位数：十六 / 二十 / 一百零五；  < > <= >= % 仍用符号");
   console.log("");
 }
@@ -1621,7 +1765,7 @@ async function main() {
       process.exit(0);
     }
 
-    const built = buildProgram(src);
+    const built = buildProgram(src, srcPath);
     fs.writeFileSync(jcbPath, built.jcb, "utf8");
     if (rest.includes("--png")) {
       try {
