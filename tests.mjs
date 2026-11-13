@@ -49,13 +49,17 @@ const CASES = [
   { name: "且/或", file: "t-logic.jcp", expect: { code: 0, out: ["且", "或"] } },
   { name: "续 continue", file: "t-continue.jcp", expect: { code: 0, out: ["1\n2\n4\n5", "完", "0\n1\n3\n4"] } },
   { name: "自动生成程序PNG", png: true, expect: { code: 0, out: ["已生成"] } },
+  { name: "GUI 本地服务", helper: "test-gui.mjs", expect: { code: 0, out: ["run:", "\"ok\":true"] } },
 ];
 
 let pass = 0, fail = 0;
 for (const c of CASES) {
   const problems = [];
   let r;
-  if (c.png) {
+  if (c.helper) {
+    const rr = spawnSync(process.execPath, [path.join(HERE, c.helper)], { encoding: "utf8", timeout: 180000 });
+    r = { code: rr.status, out: rr.stdout || "", err: rr.stderr || "", signal: rr.signal };
+  } else if (c.png) {
     const outP = path.join(HERE, "build", "test-auto.png");
     try { fs.unlinkSync(outP); } catch (e) {}
     const rr = spawnSync(process.execPath, [JCP, "png", "san.jcp", "-o", outP], { encoding: "utf8", timeout: 180000 });

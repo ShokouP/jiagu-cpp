@@ -20,12 +20,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { StringDecoder } from "node:string_decoder";
 import { spawnSync } from "node:child_process";
+import http from "node:http";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = process.env.JCP_BUILD || path.join(HERE, "build");
 
 /* ---------------------------- 现代编译器基础设施 ---------------------------- */
-const VERSION = "0.6.1";
+const VERSION = "0.7.0";
 const COLOR = !!process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (s, code) => (COLOR ? "\x1b[" + code + "m" + s + "\x1b[0m" : s);
 
@@ -618,9 +619,11 @@ function compile(ast, funcs) {
 }
 
 /* ---------------------------- 键盘输入（异步） ---------------------------- */
-function makeInput() {
+function makeInput(initial) {
   const bytes = [];
-  let started = false, eof = false, raw = false;
+  const preset = initial !== undefined && initial !== null;
+  if (preset) for (const b of Buffer.from(String(initial), "utf8")) bytes.push(b);
+  let started = false, eof = preset, raw = false;
   const waiters = [];
   function decode() {
     if (!bytes.length) return eof ? 0 : null;
@@ -666,6 +669,7 @@ function makeInput() {
   }
   return {
     async key() {
+      if (preset) { const k = decode(); return k === null ? 0 : k; }
       start();
       const k = decode();
       if (k !== null) return k;
@@ -679,17 +683,18 @@ function makeInput() {
 }
 
 /* ---------------------------- 虚拟机（异步） ---------------------------- */
-async function vm(prog) {
+async function vm(prog, opts = {}) {
   const labels = Object.fromEntries(prog.chunks.map((c, i) => [c.name, i]));
   const out = [];
   const stack = [];
-  const input = makeInput();
+  const input = makeInput(opts.input);
+  const silent = !!opts.silent;
   const MAX_STEPS = 5_000_000;
   const MAX_DEPTH = 400;
   let steps = 0, depth = 0;
 
   const printv = (v) => (typeof v === "string" ? v : String(v));
-  const writeOut = (s) => { try { process.stdout.write(s); } catch (e) {} };
+  const writeOut = (s) => { try { if (!silent) process.stdout.write(s); } catch (e) {} };
 
   function num(v, what) {
     if (typeof v !== "number" || !Number.isFinite(v)) throw new Error("运行：" + what + " 需要整数，得到 " + printv(v));
@@ -1205,6 +1210,303 @@ async function workbench() {
   console.log("   再會");
 }
 
+/* ---------------------------- 本地 Web GUI ---------------------------- */
+const GUI_HTML = (fontB64, fontChars, version) => `<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>甲骨 C++ GUI</title>
+<style>
+@font-face{font-family:"Oracular";src:url(data:font/woff2;base64,${fontB64}) format("woff2");font-display:swap}
+:root{--bg:#15110c;--paper:#f4ecdd;--ink:#2b2118;--brown:#6b5741;--rust:#8a3a22;--green:#2f5d43;--dark:#241d14}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:radial-gradient(1200px 700px at 50% -10%,#2d261b 0%,var(--bg) 62%);color:#e9e0cc;font-family:ui-serif,"Songti SC","SimSun",serif;display:flex;flex-direction:column;height:100vh;overflow:hidden}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid rgba(180,150,110,.18);flex-wrap:wrap}
+.brand{font-size:15px;letter-spacing:.18em;color:#f3ead6}
+.brand b{color:#d8b26a}
+.sub{font-size:11px;color:#9d8a6d}
+.chips{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-size:11px;padding:3px 9px;border-radius:999px;background:rgba(180,150,110,.16);color:#d8c9a8}
+main{display:flex;gap:12px;padding:12px;flex:1;min-height:0}
+main>.panel{flex:1 1 0;min-width:0}
+@media(max-width:760px){main{flex-direction:column;overflow:auto}main>.panel{min-height:280px}}
+.panel{background:linear-gradient(160deg,#faf3e3,#ede0c8);color:var(--ink);border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45), inset 0 0 60px rgba(120,86,48,.08)}
+.panel h2{margin:0;padding:9px 12px;font-size:12px;letter-spacing:.16em;color:var(--brown);font-weight:600;border-bottom:1px solid rgba(120,96,64,.22);display:flex;align-items:center;gap:8px}
+.panel h2 .mini{margin-left:auto;font-size:10px;letter-spacing:.06em;color:#8d7a5c;font-weight:400}
+.toolbar{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid rgba(120,96,64,.18);align-items:center}
+button{appearance:none;border:1px solid rgba(120,96,64,.38);background:rgba(255,252,244,.55);color:var(--ink);border-radius:7px;padding:5px 11px;font:inherit;font-size:12px;cursor:pointer;transition:.15s}
+button:hover{background:#fffaf0}
+button.primary{background:var(--rust);border-color:var(--rust);color:#fdf6e8}
+button.primary:hover{filter:brightness(1.08)}
+button.gen{background:var(--green);border-color:var(--green);color:#f2fbf5}
+select{font:inherit;font-size:12px;padding:5px 8px;border-radius:7px;border:1px solid rgba(120,96,64,.38);background:#fffaf0;color:var(--ink);max-width:190px}
+textarea{flex:1;min-height:180px;border:0;outline:none;resize:none;padding:10px 12px;background:transparent;color:#2b2118;font:13.5px/1.75 ui-monospace,Consolas,"Courier New",monospace;tab-size:4}
+.row{display:flex;gap:8px;padding:8px 10px;border-top:1px solid rgba(120,96,64,.18);align-items:center}
+.row label{font-size:11px;color:var(--brown)}
+.row input{flex:1;border:1px solid rgba(120,96,64,.3);border-radius:6px;padding:5px 8px;font:12px ui-monospace,monospace;background:#fffaf0;color:var(--ink);outline:none}
+.tabs{display:flex;gap:4px;padding:6px 10px 0;border-bottom:1px solid rgba(120,96,64,.18)}
+.tab{font-size:11px;padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid transparent;cursor:pointer;color:#7a6648}
+.tab.on{background:#241d14;color:#e9e0cc;border-color:#241d14}
+pre{flex:1;min-height:120px;margin:0;padding:10px 12px;overflow:auto;font:12px/1.65 ui-monospace,Consolas,monospace;background:#241d14;color:#e8e0cc;white-space:pre-wrap}
+.stats{padding:6px 10px;font-size:11px;color:var(--brown);border-bottom:1px solid rgba(120,96,64,.18);min-height:26px}
+.err{color:#b23a2a}
+.ok{color:#2f6b47}
+.oracle{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:row-reverse;gap:9px;align-items:flex-start;background:radial-gradient(120% 60% at 40% 10%,#fdf8ea,#f0e3ca 60%,#e4d0ac);border-radius:0 0 12px 12px}
+.vcol{display:flex;flex-direction:column;align-items:center;gap:2px;flex-shrink:0}
+.vcol .zi{font-family:"Oracular",ui-serif,serif;font-size:23px;line-height:1.12;color:#2e1f0e;text-shadow:0 1px 0 rgba(255,252,240,.7)}
+.vcol .mk{width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:#4a3622;font:15px ui-monospace,monospace}
+.vcol .gap{height:8px}
+#pngWrap{flex:1;display:none;align-items:center;justify-content:center;background:#1c1710;overflow:auto}
+#png{max-width:100%;max-height:100%;object-fit:contain}
+.hint{font-size:11px;color:#9d8a6d;padding:8px 12px}
+kbd{border:1px solid rgba(180,150,110,.3);border-radius:4px;padding:0 4px;font-size:10px}
+footer{padding:6px 16px 10px;font-size:11px;color:#8d7a5c}
+</style></head><body>
+<header>
+  <div class="brand">甲 骨 <b>C++</b> · GUI</div>
+  <div class="sub">本地编译器服务 · v${version}</div>
+  <div class="chips"><span class="chip" id="chipState">就绪</span><span class="chip">隹 / 益 / 去 / 乘 / 分</span><span class="chip">止 / 续</span></div>
+</header>
+<main>
+  <section class="panel">
+    <h2>源码 <span class="mini">Ctrl+Enter 运行 · Ctrl+G 出图</span></h2>
+    <div class="toolbar">
+      <select id="examples"><option value="">— 载入示例 —</option></select>
+      <button id="btnRun" class="primary">运行</button>
+      <button id="btnCheck">检查</button>
+      <button id="btnPng" class="gen">生成甲骨图</button>
+      <button id="btnClear">清空</button>
+    </div>
+    <div class="row"><label>输入（给 听 用）</label><input id="stdin" placeholder="如 dddddq（贪吃蛇按键）"></div>
+    <textarea id="src" spellcheck="false"></textarea>
+  </section>
+  <section class="panel">
+    <h2>输出 / 字节码 / 甲骨预览 <span class="mini" id="stats">—</span></h2>
+    <div class="tabs">
+      <div class="tab on" data-tab="out">运行输出</div>
+      <div class="tab" data-tab="jcb">JCB1 字节码</div>
+      <div class="tab" data-tab="oracle">甲骨预览（竖排·右起）</div>
+      <div class="tab" data-tab="pngtab">PNG</div>
+    </div>
+    <div class="stats" id="line"></div>
+    <pre id="out">点「运行」编译并在内置虚拟机里跑。</pre>
+    <pre id="jcb" style="display:none"></pre>
+    <div class="oracle" id="oracle" style="display:none"></div>
+    <div id="pngWrap"><img id="png" alt="甲骨程序图"><a id="dl" download="jiagu.png" style="position:absolute;margin:10px;color:#d8b26a;font-size:12px">下载 PNG</a></div>
+  </section>
+</main>
+<footer>本地服务 · 仅监听 127.0.0.1 · 自动出图需要本机 Edge/Chrome</footer>
+<script>
+var FONT = new Set(Array.from(${JSON.stringify(fontChars)}));
+var els = function(id){ return document.getElementById(id); };
+var srcEl = els("src"), outEl = els("out"), jcbEl = els("jcb"), oracleEl = els("oracle"), lineEl = els("line"), statsEl = els("stats"), chip = els("chipState");
+var pngWrap = els("pngWrap"), pngEl = els("png"), dlEl = els("dl");
+function setChip(t, ok){ chip.textContent = t; chip.style.background = ok ? "rgba(47,93,67,.55)" : "rgba(138,43,26,.5)"; }
+function esc(s){ return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+function markFor(ch){ return '<span class="mk">' + esc(ch === " " ? "·" : ch) + '</span>'; }
+function renderOracle(src){
+  var lines = src.split(/\\r?\\n/).filter(function(l){ return l.length > 0; });
+  var html = "";
+  for (var i = lines.length - 1; i >= 0; i--) {
+    var line = lines[i], col = "";
+    for (var j = 0; j < line.length; j++) {
+      var ch = line[j];
+      if (ch === " ") col += '<span class="gap"></span>';
+      else if (/[\\u3400-\\u9fff]/.test(ch) && FONT.has(ch)) col += '<span class="zi">' + ch + '</span>';
+      else col += markFor(ch);
+    }
+    html += '<div class="vcol">' + col + '</div>';
+  }
+  oracleEl.innerHTML = html;
+}
+function showTab(name){
+  document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("on", t.getAttribute("data-tab") === name); });
+  outEl.style.display = name === "out" ? "block" : "none";
+  jcbEl.style.display = name === "jcb" ? "block" : "none";
+  oracleEl.style.display = name === "oracle" ? "flex" : "none";
+  pngWrap.style.display = name === "pngtab" ? "flex" : "none";
+}
+document.querySelectorAll(".tab").forEach(function(t){ t.addEventListener("click", function(){ showTab(t.getAttribute("data-tab")); }); });
+async function api(path, body){
+  var r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+  return await r.json();
+}
+async function doRun(){
+  setChip("编译中…", false); outEl.textContent = "…";
+  try {
+    var d = await api("/api/run", { src: srcEl.value, input: els("stdin").value });
+    if (!d.ok) { outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; lineEl.textContent = d.line ? ("第 " + d.line + " 行" + (d.col ? "，第 " + d.col + " 列" : "")) : ""; setChip("编译错误", false); return; }
+    outEl.textContent = d.output || "（无输出）";
+    jcbEl.textContent = d.bytecode || "";
+    lineEl.textContent = "退出码 " + d.exit + (d.error ? "（运行错误：" + d.error + "）" : "");
+    statsEl.textContent = d.ins + " 条指令 · 槽位 " + d.slots + " · " + d.funcs + " 个函数";
+    setChip("运行完成", true);
+  } catch (e) { outEl.innerHTML = '<span class="err">' + esc(e.message) + '</span>'; setChip("出错", false); }
+}
+async function doCheck(){
+  setChip("检查中…", false);
+  try {
+    var d = await api("/api/check", { src: srcEl.value });
+    if (d.ok) { setChip("检查通过", true); lineEl.textContent = "词法 " + d.tokens + " 令牌 · 字节码 " + d.ins + " 条"; outEl.textContent = "✓ 词法 / 语法 / 语义 / 字节码 全部通过"; }
+    else { setChip("检查失败", false); outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; lineEl.textContent = d.line ? ("第 " + d.line + " 行") : ""; }
+  } catch (e) { setChip("出错", false); }
+}
+async function doPng(){
+  setChip("刻图中…", false);
+  try {
+    var d = await api("/api/png", { src: srcEl.value, title: "龜卜龜食" });
+    if (!d.ok) { outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; setChip("出图失败", false); return; }
+    pngEl.src = d.png; dlEl.href = d.png; showTab("pngtab"); setChip("已生成 PNG", true);
+  } catch (e) { setChip("出错", false); }
+}
+document.querySelectorAll("[data-tab]").forEach(function(){}); 
+els("btnRun").onclick = doRun; els("btnCheck").onclick = doCheck; els("btnPng").onclick = doPng;
+els("btnClear").onclick = function(){ srcEl.value = ""; renderOracle(""); };
+srcEl.addEventListener("input", function(){ renderOracle(srcEl.value); });
+srcEl.addEventListener("keydown", function(e){
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); doRun(); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === "g" || e.key === "G")) { e.preventDefault(); doPng(); }
+});
+function loadExamples(){
+  fetch("/api/examples").then(function(r){ return r.json(); }).then(function(list){
+    var sel = els("examples");
+    list.forEach(function(x){ var o = document.createElement("option"); o.value = x.name; o.textContent = x.title; sel.appendChild(o); });
+    sel.onchange = function(){
+      if (!sel.value) return;
+      fetch("/api/load?name=" + encodeURIComponent(sel.value)).then(function(r){ return r.json(); }).then(function(d){
+        if (d.ok) { srcEl.value = d.source; renderOracle(d.source); setChip("已载入 " + d.name, true); }
+      });
+    };
+  });
+}
+loadExamples();
+fetch("/api/default").then(function(r){ return r.json(); }).then(function(d){ if (d.ok) { srcEl.value = d.source; renderOracle(d.source); } });
+</script></body></html>`;
+
+const MIME = {
+  ".png": "image/png"
+};
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let chunk = "", size = 0;
+    req.on("data", (b) => { size += b.length; if (size > 2 * 1024 * 1024) { reject(new Error("请求体过大")); req.destroy(); } chunk += b; });
+    req.on("end", () => resolve(chunk));
+    req.on("error", reject);
+  });
+}
+function json(res, code, obj) {
+  const s = JSON.stringify(obj);
+  res.writeHead(code, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  res.end(s);
+}
+function diagOf(e) {
+  return { ok: false, error: e && e.message ? e.message : String(e), line: e && e.line, col: e && e.col };
+}
+
+async function startGui(argv) {
+  const portIdx = argv.indexOf("--port");
+  const port = portIdx >= 0 ? parseInt(argv[portIdx + 1], 10) : 7801;
+  const noOpen = argv.includes("--no-open");
+  const fontB64 = getFontB64();
+  if (!fontB64) throw new Error("找不到甲骨字体（可用 JCP_FONT 指定 orac.woff2 路径）");
+  const html = GUI_HTML(fontB64, [...FONT].join(""), VERSION);
+  const demoFiles = (() => {
+    try {
+      return fs.readdirSync(HERE).filter((f) => f.endsWith(".jcp") && !f.startsWith("t-")).sort();
+    } catch (e) { return []; }
+  })();
+  const loadDemo = (name) => {
+    const f = path.join(HERE, name);
+    if (!demoFiles.includes(name)) throw new Error("没有这个示例：" + name);
+    return fs.readFileSync(f, "utf8");
+  };
+  const gui = async (src) => {
+    const built = buildProgram(src);
+    const r = await vm(built.prog, { input: "", silent: true });
+    return {
+      ok: true,
+      output: r.out.join("\n"),
+      bytecode: built.jcb,
+      exit: r.exit,
+      error: r.error,
+      ins: built.prog.chunks.reduce((n, c) => n + c.code.length, 0),
+      slots: built.prog.slotCount,
+      funcs: built.ast.funcs.length,
+    };
+  };
+  const server = http.createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, "http://127.0.0.1");
+      if (req.method === "GET" && url.pathname === "/") {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        res.end(html);
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/api/examples") {
+        json(res, 200, demoFiles.map((f) => {
+          const src = fs.readFileSync(path.join(HERE, f), "utf8");
+          const first = (src.split(/\r?\n/).find((l) => l.trim()) || "").replace(/^[；;]\s*/, "");
+          return { name: f, title: f + (first ? " · " + first : "") };
+        }));
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/api/load") {
+        try { json(res, 200, { ok: true, name: url.searchParams.get("name"), source: loadDemo(url.searchParams.get("name")) }); }
+        catch (e) { json(res, 404, diagOf(e)); }
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/api/default") {
+        try { json(res, 200, { ok: true, name: "san.jcp", source: loadDemo("san.jcp") }); }
+        catch (e) { json(res, 200, { ok: false, error: e.message }); }
+        return;
+      }
+      if (req.method === "POST" && (url.pathname === "/api/run" || url.pathname === "/api/check" || url.pathname === "/api/png")) {
+        const body = JSON.parse((await readBody(req)) || "{}");
+        const src = String(body.src || "");
+        if (url.pathname === "/api/check") {
+          try {
+            const built = buildProgram(src);
+            json(res, 200, { ok: true, tokens: built.toks.length - 1, ins: built.prog.chunks.reduce((n, c) => n + c.code.length, 0), slots: built.prog.slotCount });
+          } catch (e) { json(res, 200, diagOf(e)); }
+          return;
+        }
+        if (url.pathname === "/api/run") {
+          try { json(res, 200, await gui(src)); }
+          catch (e) { json(res, 200, diagOf(e)); }
+          return;
+        }
+        try {
+          const out = path.join(BUILD_DIR, "gui-" + Date.now() + ".png");
+          const p = await generatePng(src, { out, title: body.title || "龜卜龜食", srcPath: "gui.jcp" });
+          const b64 = fs.readFileSync(p).toString("base64");
+          json(res, 200, { ok: true, png: "data:image/png;base64," + b64, path: p });
+        } catch (e) { json(res, 200, diagOf(e)); }
+        return;
+      }
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    } catch (e) {
+      try { json(res, 500, diagOf(e)); } catch (e2) {}
+    }
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", resolve);
+  });
+  const url = "http://127.0.0.1:" + port + "/";
+  console.log("  " + paint("甲骨 C++ GUI", "1;36") + " 已启动： " + paint(url, "1;4"));
+  console.log("  " + paint("Ctrl+C 退出", "2"));
+  if (!noOpen) {
+    try {
+      const opener = process.platform === "win32" ? ["cmd", ["/c", "start", "", url]] : ["open", [url]];
+      const child = spawnSync(opener[0], opener[1], { stdio: "ignore", timeout: 5000 });
+      if (child.error) console.log("  请手动打开：" + url);
+    } catch (e) {}
+  }
+  await new Promise(() => {});
+}
+
+/* ---------------------------- CLI ---------------------------- */
+
 /* ---------------------------- CLI ---------------------------- */
 function printHelp() {
   console.log("");
@@ -1216,6 +1518,7 @@ function printHelp() {
   console.log("    jcp check <源.jcp>        只做词法/语法/语义/字节码检查");
   console.log("    jcp build <源.jcp>        只生成 JCB1 字节码");
   console.log("    jcp repl                  进入一体机（编写 · 编译 · 运行）");
+  console.log("    jcp gui [--port 7801]     打开图形界面（本地 Web GUI，默认自动开浏览器）");
   console.log("    jcp examples              列出内置示例");
   console.log("    jcp png <源.jcp> [-o 输出.png] [--title …]   自动生成甲骨程序图");
   console.log("    jcp version               版本");
@@ -1259,6 +1562,7 @@ async function main() {
     return;
   }
   if (SUB === "repl") { await workbench(); return; }
+  if (SUB === "gui") { await startGui(args.slice(1)); return; }
   if (SUB === "png") {
     const r2 = args.slice(1);
     const srcArg = r2.find((a) => !a.startsWith("--"));

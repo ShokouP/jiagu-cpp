@@ -33,6 +33,7 @@ node jcp.mjs san.jcp            # 编译并运行「三加二」→ 大吉
 node jcp.mjs snake.jcp          # 玩贪吃蛇（方向键/WASD，q 退出）
 node jcp.mjs png snake.jcp -o snake.png   # 自动生成甲骨程序图
 node jcp.mjs repl               # 一体机：写代码 / :run / :png / :vertical
+node jcp.mjs gui                # 图形界面：编辑器 / 运行 / 字节码 / 甲骨预览 / 出图
 node tests.mjs                  # 31 项自动测试
 ```
 
@@ -68,6 +69,19 @@ jcp version / help
 选项：`--quiet --brief --emit --save out.jcb --vertical --to-vertical`
 `--png`（编译/运行同时出图）、`-o`、`--title`。
 
+
+## 图形界面（GUI）
+
+```bash
+node jcp.mjs gui                 # 默认 http://127.0.0.1:7801，自动开浏览器
+node jcp.mjs gui --port 7801 --no-open
+```
+
+左右双栏：左侧源码（示例下拉、运行、检查、生成甲骨图），右侧运行输出 / JCB1 字节码 /
+甲骨预览（竖排·自右向左）/ PNG 预览与下载；`Ctrl+Enter` 运行、`Ctrl+G` 出图；
+输入框给 `听()` 提供按键。桌面版单文件 exe 内置字体，`jcp.exe gui` 直接可用。
+
+![GUI](docs/gui.png)
 ## 语言速查
 
 | 甲骨 | 含义 | 甲骨 | 含义 |
