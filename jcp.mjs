@@ -27,7 +27,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = process.env.JCP_BUILD || path.join(HERE, "build");
 
 /* ---------------------------- 现代编译器基础设施 ---------------------------- */
-const VERSION = "0.9.0";
+const VERSION = "0.10.0";
 const COLOR = !!process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (s, code) => (COLOR ? "\x1b[" + code + "m" + s + "\x1b[0m" : s);
 
@@ -333,7 +333,14 @@ function parse(toks) {
     eat("op", "(");
     const params = [];
     if (!at("op", ")")) {
-      for (;;) { const pt = type(); const pn = eat("id").v; params.push({ type: pt, name: pn }); if (at("op", ",")) { p++; continue; } break; }
+      for (;;) {
+        const pt = type(); const pn = eat("id").v;
+        let isArr = false;
+        if (at("op", "[")) { p++; eat("op", "]"); isArr = true; }
+        params.push({ type: pt, name: pn, arr: isArr });
+        if (at("op", ",")) { p++; continue; }
+        break;
+      }
     }
     eat("op", ")");
     return { t: "func", ret: ty, name, params, body: block() };
@@ -349,11 +356,15 @@ function parse(toks) {
 
 /* ---------------------------- 语义检查 ---------------------------- */
 const BUILTINS = {
-  "屏": { argc: 0, ret: "void" },
-  "书": { argc: 1, ret: "void" },
-  "听": { argc: 0, ret: "int" },
-  "聽": { argc: 0, ret: "int" },
-  "歇": { argc: 1, ret: "void" },
+  "屏": { argc: 0, ret: "void", args: [] },
+  "书": { argc: 1, ret: "void", args: ["any"] },
+  "听": { argc: 0, ret: "int", args: [] },
+  "聽": { argc: 0, ret: "int", args: [] },
+  "歇": { argc: 1, ret: "void", args: ["int"] },
+  "文長": { argc: 1, ret: "int", args: ["string"] },
+  "取文": { argc: 3, ret: "string", args: ["string", "int", "int"] },
+  "解文": { argc: 1, ret: "int", args: ["string"] },
+  "解浮": { argc: 1, ret: "float", args: ["string"] },
 };
 
 function check(ast) {
@@ -379,7 +390,7 @@ function check(ast) {
       case "id": {
         const s = scope.get(e.v);
         if (!s) fail("未声明的变量「" + e.v + "」");
-        if (s.kind === "arr") fail("数组「" + e.v + "」必须带下标使用");
+        if (s.kind === "arr") return "arr:" + s.elem;
         return s.type;
       }
       case "index": {
@@ -437,14 +448,26 @@ function check(ast) {
         if (f) {
           if (e.args.length !== f.params.length) fail("函数「" + name + "」需要 " + f.params.length + " 个参数，给了 " + e.args.length + " 个");
           for (let i = 0; i < e.args.length; i++) {
-            const at = typeOf(e.args[i], scope);
-            if (!assignable(f.params[i].type, at)) fail("函数「" + name + "」第 " + (i + 1) + " 个参数需要 " + f.params[i].type + "，得到 " + at);
+            const actual = typeOf(e.args[i], scope);
+            const decl = f.params[i];
+            if (decl.arr) {
+              if (actual !== "arr:" + decl.type) fail("函数「" + name + "」第 " + (i + 1) + " 个参数需要 " + decl.type + " 数组，得到 " + actual);
+            } else if (actual.indexOf("arr:") === 0) {
+              fail("函数「" + name + "」第 " + (i + 1) + " 个参数需要 " + decl.type + "，得到数组");
+            } else if (!assignable(decl.type, actual)) {
+              fail("函数「" + name + "」第 " + (i + 1) + " 个参数需要 " + decl.type + "，得到 " + actual);
+            }
           }
           return f.ret;
         }
         if (b) {
           if (e.args.length !== b.argc) fail("内建「" + name + "」需要 " + b.argc + " 个参数，给了 " + e.args.length + " 个");
-          for (const a of e.args) typeOf(a, scope);
+          for (let i = 0; i < e.args.length; i++) {
+            const actual = typeOf(e.args[i], scope);
+            if (actual.indexOf("arr:") === 0) fail("内建「" + name + "」不接受数组参数");
+            const spec = b.args[i] || "any";
+            if (spec !== "any" && !assignable(spec, actual)) fail("内建「" + name + "」第 " + (i + 1) + " 个参数需要 " + spec + "，得到 " + actual);
+          }
           return b.ret;
         }
         fail("未定义的函数「" + name + "」");
@@ -471,6 +494,7 @@ function check(ast) {
       } else if (s.t === "constdecl") {
         if (scope.has(s.name)) fail("名字重复声明「" + s.name + "」");
         const ty = typeOf(s.init, scope);
+        if (ty.indexOf("arr:") === 0) fail("常量不能是数组");
         scope.set(s.name, { type: ty, kind: "const" });
         decls++;
       } else if (s.t === "arrdecl") {
@@ -497,10 +521,15 @@ function check(ast) {
           if (!assignable(e.elem, ty)) fail("数组「" + tgt.name + "」元素类型 " + e.elem + " 不能接收 " + ty);
         }
       } else if (s.t === "print") {
-        for (const a of s.args) typeOf(a, scope);
+        for (const a of s.args) {
+          const ty = typeOf(a, scope);
+          if (ty === "void") fail("不能打印 無（void）");
+          if (ty.indexOf("arr:") === 0) fail("不能直接打印数组");
+        }
       } else if (s.t === "assert") {
         for (const a of s.args) {
           const ty = typeOf(a, scope);
+          if (ty.indexOf("arr:") === 0) fail("卜 不能接数组");
           if (ty !== "bool" && ty !== "int") fail("卜 需要 占（bool）或 量（int）");
         }
       } else if (s.t === "exprst") {
@@ -552,6 +581,7 @@ function check(ast) {
           fail("函数「" + fn.name + "」需要返回 " + fn.ret);
         } else {
           const ty = typeOf(s.e, scope);
+          if (ty.indexOf("arr:") === 0) fail("函数不能返回数组");
           if (!assignable(fn.ret, ty)) fail("函数「" + fn.name + "」返回类型 " + fn.ret + "，得到 " + ty);
         }
       }
@@ -561,8 +591,9 @@ function check(ast) {
   for (const f of ast.funcs) {
     const scope = new Map();
     for (const x of f.params) {
+      if (x.type === "void") fail("参数不能是 無（void）");
       if (scope.has(x.name)) fail("参数重名「" + x.name + "」");
-      scope.set(x.name, { type: x.type, kind: "var" });
+      scope.set(x.name, x.arr ? { type: "arr", kind: "arr", elem: x.type } : { type: x.type, kind: "var" });
     }
     walkScope(f.body.body, scope, f);
   }
@@ -979,6 +1010,41 @@ async function vm(prog, opts = {}) {
   }
 
   async function callBuiltin(name, args) {
+    if (name === "文長") {
+      const s = args[0];
+      if (typeof s !== "string") throw new Error("运行：文長 需要 字（string）");
+      return Array.from(s).length;
+    }
+    if (name === "取文") {
+      const s = args[0];
+      if (typeof s !== "string") throw new Error("运行：取文 需要 字（string）");
+      const start = num(args[1], "取文 起点");
+      const cnt = num(args[2], "取文 长度");
+      if (start < 0 || cnt < 0 || start > Array.from(s).length) throw new Error("运行：取文 范围非法");
+      return Array.from(s).slice(start, start + cnt).join("");
+    }
+    if (name === "解文") {
+      const s = String(args[0]).trim();
+      if (/^[+-]?[0-9]+$/.test(s)) return parseInt(s, 10);
+      let sign = 1, rest = s;
+      if (rest[0] === "-" || rest[0] === "+") { sign = rest[0] === "-" ? -1 : 1; rest = rest.slice(1); }
+      if (rest.length && [...rest].every((c) => NUMERAL_CHARS.includes(c))) return sign * parseNumeral(rest);
+      throw new Error("运行：解文 无法解析「" + String(args[0]) + "」");
+    }
+    if (name === "解浮") {
+      const raw = String(args[0]).trim();
+      if (/^[+-]?[0-9]+(\.[0-9]+)?$/.test(raw)) return mkF(parseFloat(raw));
+      let sign = 1, rest = raw;
+      if (rest[0] === "-" || rest[0] === "+") { sign = rest[0] === "-" ? -1 : 1; rest = rest.slice(1); }
+      const parts = rest.split("·");
+      if (parts.length === 2 && parts[0].length && parts[1].length && [...(parts[0] + parts[1])].every((c) => NUMERAL_CHARS.includes(c))) {
+        const ip = parseNumeral(parts[0]);
+        let frac = 0;
+        for (let k = 0; k < parts[1].length; k++) frac = frac * 10 + DIGIT[parts[1][k]];
+        return mkF(sign * (ip + frac / Math.pow(10, parts[1].length)));
+      }
+      throw new Error("运行：解浮 无法解析「" + raw + "」");
+    }
     if (name === "屏") {
       if (process.stdout.isTTY) {
         if (process.env.WT_SESSION) writeOut("\x1b[2J\x1b[H");
@@ -1475,6 +1541,13 @@ select{font:inherit;font-size:12px;padding:5px 8px;border-radius:7px;border:1px 
 .tab.on{background:#241d14;color:#e9e0cc;border-color:#241d14}
 pre{flex:1;min-height:120px;margin:0;padding:10px 12px;overflow:auto;font:12px/1.65 ui-monospace,Consolas,monospace;background:#241d14;color:#e8e0cc;white-space:pre-wrap}
 .stats{padding:6px 10px;font-size:11px;color:var(--brown);border-bottom:1px solid rgba(120,96,64,.18);min-height:26px;word-break:break-all}
+.ac{display:flex;flex-wrap:wrap;gap:5px;padding:6px 10px;border-top:1px solid rgba(120,96,64,.18);background:#fff8ec;max-height:88px;overflow:auto}
+.ac[hidden]{display:none}
+.acitem{display:flex;align-items:baseline;gap:5px;border:1px solid rgba(120,96,64,.3);background:#fffdf6;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer}
+.acitem b{color:#8a3a22;font-size:12px}
+.acitem span{color:#8d7a5c;font-size:10px}
+.acitem.on{background:#241d14;color:#e9e0cc;border-color:#241d14}
+.acitem.on b{color:#f0c98a}.acitem.on span{color:#b9a888}
 .err{color:#b23a2a}
 .ok{color:#2f6b47}
 .oracle{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:row-reverse;gap:9px;align-items:flex-start;background:radial-gradient(120% 60% at 40% 10%,#fdf8ea,#f0e3ca 60%,#e4d0ac);border-radius:0 0 12px 12px}
@@ -1489,7 +1562,7 @@ footer{padding:6px 16px 10px;font-size:11px;color:#8d7a5c}
 <header>
   <div class="brand">甲 骨 <b>C++</b> · GUI</div>
   <div class="sub">本地编译器服务 · v${version}</div>
-  <div class="chips"><span class="chip" id="chipState">就绪</span><span class="chip">恒 / 引 / 模块</span><span class="chip">行号 · 高亮</span></div>
+  <div class="chips"><span class="chip" id="chipState">就绪</span><span class="chip">恒 / 引 / 模块</span><span class="chip">行号 · 高亮 · 补全</span></div>
 </header>
 <main>
   <section class="panel">
@@ -1510,6 +1583,7 @@ footer{padding:6px 16px 10px;font-size:11px;color:#8d7a5c}
         <textarea id="src" spellcheck="false"></textarea>
       </div>
     </div>
+    <div class="ac" id="ac" hidden></div>
   </section>
   <section class="panel">
     <h2>输出 / 字节码 / 甲骨预览 <span class="mini" id="stats">—</span></h2>
@@ -1532,6 +1606,7 @@ var FONT = new Set(Array.from(${JSON.stringify(fontChars)}));
 var els = function(id){ return document.getElementById(id); };
 var srcEl = els("src"), outEl = els("out"), jcbEl = els("jcb"), oracleEl = els("oracle"), lineEl = els("line"), statsEl = els("stats"), chip = els("chipState");
 var pngWrap = els("pngWrap"), pngEl = els("png"), dlEl = els("dl"), hlEl = els("hl"), gutterEl = els("gutter");
+var acEl = els("ac"), acItems = [], acIndex = 0, acToken = null;
 var KW_SET = new Set(["量","無","歸","若","弗","復","從","言","卜","止","续","恒","引","字","占"]);
 var OP_SET = new Set(["隹","益","去","乘","分","不","且","或"]);
 var NUM_SET = new Set(["零","一","二","三","四","五","六","七","八","九","十","百","千","兩"]);
@@ -1580,6 +1655,59 @@ function renderOracle(src){
   }
   oracleEl.innerHTML = html;
 }
+var VOCAB = [
+  {w:"量",d:"int"},{w:"分",d:"float"},{w:"字",d:"string"},{w:"占",d:"bool"},
+  {w:"無",d:"void"},{w:"歸",d:"return"},{w:"若",d:"if"},{w:"弗",d:"else"},
+  {w:"復",d:"while"},{w:"從",d:"for"},{w:"止",d:"break"},{w:"续",d:"continue"},
+  {w:"恒",d:"常量"},{w:"引",d:"模块"},{w:"言",d:"输出"},{w:"卜",d:"占断"},{w:"貞",d:"入口"},
+  {w:"隹",d:"赋值/相等"},{w:"益",d:"加/拼接"},{w:"去",d:"减"},{w:"乘",d:"乘"},
+  {w:"不隹",d:"不等"},{w:"且",d:"与"},{w:"或",d:"或"},{w:"對",d:"真"},{w:"非",d:"假"},
+  {w:"文長",d:"字长度"},{w:"取文",d:"取子串"},{w:"解文",d:"字→量"},{w:"解浮",d:"字→分"},
+  {w:"屏",d:"清屏"},{w:"书",d:"原样输出"},{w:"听",d:"读键"},{w:"歇",d:"等待"},
+  {w:"大",d:"库:最大"},{w:"小",d:"库:最小"},{w:"方",d:"库:平方"},{w:"正",d:"库:绝对值"},{w:"余",d:"库:余数"},{w:"共",d:"库:数组和"},{w:"兆",d:"库:随机"}
+];
+function tokenAtCaret(){
+  var pos = srcEl.selectionStart, v = srcEl.value, s = pos;
+  while (s > 0) {
+    var c = v.charCodeAt(s - 1);
+    if ((c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c === 95 || (c >= 0x3400 && c <= 0x9fff)) s--;
+    else break;
+  }
+  if (s === pos) return null;
+  return { text: v.slice(s, pos), start: s, end: pos };
+}
+function hideAC(){ acEl.hidden = true; acItems = []; }
+function paintAC(){
+  var nodes = acEl.querySelectorAll(".acitem");
+  nodes.forEach(function(n, i){ n.classList.toggle("on", i === acIndex); });
+  if (nodes[acIndex]) { try { nodes[acIndex].scrollIntoView({ block: "nearest" }); } catch (e) {} }
+}
+function updateAC(force){
+  var tok = tokenAtCaret();
+  if (!tok) { hideAC(); return; }
+  var q = tok.text;
+  var matches = VOCAB.filter(function(v){ return v.w.indexOf(q) === 0 && v.w !== q; }).slice(0, 8);
+  if (!matches.length) { hideAC(); return; }
+  acItems = matches; acIndex = 0; acToken = tok;
+  acEl.innerHTML = matches.map(function(v, i){ return '<div class="acitem' + (i === 0 ? ' on' : '') + '" data-i="' + i + '"><b>' + v.w + '</b><span>' + v.d + '</span></div>'; }).join("");
+  acEl.hidden = false;
+}
+function chooseAC(i){
+  if (!acItems[i] || !acToken) return;
+  var v = srcEl.value, tok = acToken, ins = acItems[i].w;
+  srcEl.value = v.slice(0, tok.start) + ins + v.slice(tok.end);
+  var pos = tok.start + ins.length;
+  hideAC(); updateEditor();
+  srcEl.focus(); srcEl.setSelectionRange(pos, pos);
+}
+acEl.addEventListener("click", function(e){
+  var node = e.target;
+  while (node && node !== acEl) {
+    if (node.className && String(node.className).indexOf("acitem") >= 0) { chooseAC(+node.getAttribute("data-i")); return; }
+    node = node.parentNode;
+  }
+});
+
 function updateEditor(){
   var src = srcEl.value;
   var lines = src.split("\\n");
@@ -1644,10 +1772,17 @@ async function doSavePng(){
   } catch (e) { setChip("保存失败", false); }
 }
 els("btnRun").onclick = doRun; els("btnCheck").onclick = doCheck; els("btnPng").onclick = doPng; els("btnSavePng").onclick = doSavePng;
-els("btnClear").onclick = function(){ srcEl.value = ""; updateEditor(); };
-srcEl.addEventListener("input", updateEditor);
+els("btnClear").onclick = function(){ srcEl.value = ""; hideAC(); updateEditor(); };
+srcEl.addEventListener("input", function(){ updateEditor(); updateAC(); });
 srcEl.addEventListener("scroll", syncScroll);
 srcEl.addEventListener("keydown", function(e){
+  if (!acEl.hidden) {
+    if (e.key === "ArrowDown") { e.preventDefault(); acIndex = (acIndex + 1) % acItems.length; paintAC(); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); acIndex = (acIndex - 1 + acItems.length) % acItems.length; paintAC(); return; }
+    if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); chooseAC(acIndex); return; }
+    if (e.key === "Escape") { hideAC(); return; }
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key === " ") { e.preventDefault(); updateAC(true); return; }
   if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); doRun(); }
   if ((e.ctrlKey || e.metaKey) && (e.key === "g" || e.key === "G")) { e.preventDefault(); doPng(); }
 });

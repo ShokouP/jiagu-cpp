@@ -55,8 +55,11 @@ const CASES = [
   { name: "类型：浮点/字符串/布尔", file: "t-types.jcp", expect: { code: 0, out: ["3.14", "5.14", "6.28", "甲骨C++", "同", "吉", "非", "或"] } },
   { name: "类型化数组", file: "t-arrtypes.jcp", expect: { code: 0, out: ["1.5", "甲", "吉"] } },
   { name: "类型错误", file: "t-typeerr.jcp", expect: { code: 3, err: ["不能接收 string"] } },
+  { name: "字符串库 文長/取文/解文/解浮", file: "t-strlib.jcp", expect: { code: 0, out: ["5", "骨C+", "42", "3.5"] } },
+  { name: "数组作函数参数", file: "t-arraypass.jcp", expect: { code: 0, out: ["15"] } },
+  { name: "标准库数组函数 共", file: "t-arraylib.jcp", expect: { code: 0, out: ["6"] } },
   { name: "自动生成程序PNG", png: true, expect: { code: 0, out: ["已生成"] } },
-  { name: "GUI 本地服务", helper: "test-gui.mjs", expect: { code: 0, out: ["run:", "\"ok\":true"] } },
+  { name: "GUI 本地服务", helper: "test-gui.mjs", expect: { code: 0, out: ["run:", "\"ok\":true", "ac-ok"] } },
 ];
 
 let pass = 0, fail = 0;

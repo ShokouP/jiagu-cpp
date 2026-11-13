@@ -28,6 +28,8 @@ async function post(p, body) {
 }
 try {
   await waitUp();
+  const page = await (await fetch(BASE + "/")).text();
+  console.log("html:", page.indexOf("id=\"ac\"") >= 0 && page.indexOf("文長") >= 0 ? "ac-ok" : "ac-missing", page.length);
   console.log("examples:", (await (await fetch(BASE + "/api/examples")).json()).length);
   const d = await (await fetch(BASE + "/api/load?name=san.jcp")).json();
   console.log("load:", d.ok, d.name, d.source.length);
