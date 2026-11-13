@@ -52,6 +52,9 @@ const CASES = [
   { name: "常量 恒", file: "t-const.jcp", expect: { code: 0, out: ["8", "9"] } },
   { name: "常量不可赋值", file: "t-const-err.jcp", expect: { code: 3, err: ["常量「甲」不可赋值"] } },
   { name: "标准库 引 學/兆", file: "t-stdlib.jcp", expect: { code: 0, out: ["9", "12"] } },
+  { name: "类型：浮点/字符串/布尔", file: "t-types.jcp", expect: { code: 0, out: ["3.14", "5.14", "6.28", "甲骨C++", "同", "吉", "非", "或"] } },
+  { name: "类型化数组", file: "t-arrtypes.jcp", expect: { code: 0, out: ["1.5", "甲", "吉"] } },
+  { name: "类型错误", file: "t-typeerr.jcp", expect: { code: 3, err: ["不能接收 string"] } },
   { name: "自动生成程序PNG", png: true, expect: { code: 0, out: ["已生成"] } },
   { name: "GUI 本地服务", helper: "test-gui.mjs", expect: { code: 0, out: ["run:", "\"ok\":true"] } },
 ];

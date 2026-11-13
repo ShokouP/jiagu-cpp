@@ -27,7 +27,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = process.env.JCP_BUILD || path.join(HERE, "build");
 
 /* ---------------------------- 现代编译器基础设施 ---------------------------- */
-const VERSION = "0.8.0";
+const VERSION = "0.9.0";
 const COLOR = !!process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (s, code) => (COLOR ? "\x1b[" + code + "m" + s + "\x1b[0m" : s);
 
@@ -64,7 +64,8 @@ function loadFontSet() {
 const FONT = loadFontSet();
 
 /* ---------------------------- 词法 ---------------------------- */
-const KW = { 量: "int", 無: "void", 歸: "return", 若: "if", 弗: "else", 復: "while", 從: "for", 言: "print", 卜: "assert", 止: "break", 续: "continue", 恒: "const", 引: "import" };
+const KW = { 量: "int", 無: "void", 歸: "return", 若: "if", 弗: "else", 復: "while", 從: "for", 言: "print", 卜: "assert", 止: "break", 续: "continue", 恒: "const", 引: "import", 字: "string", 占: "bool" };
+const BOOLS = { 對: true, 非: false };
 const NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 吉: 1 };
 const NUMERAL_CHARS = "零一二三四五六七八九十百千兩";
 const DIGIT = { 零: 0, 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
@@ -109,6 +110,17 @@ function lex(src) {
       const start = i;
       let j = i;
       while (j < src.length && NUMERAL_CHARS.includes(src[j])) j++;
+      if (j < src.length && src[j] === "·" && NUMERAL_CHARS.includes(src[j + 1])) {
+        const intPart = parseNumeral(src.slice(i, j));
+        let k = j + 1;
+        while (k < src.length && NUMERAL_CHARS.includes(src[k])) k++;
+        const fracWord = src.slice(j + 1, k);
+        let fracNum = 0;
+        for (let idx = 0; idx < fracWord.length; idx++) fracNum = fracNum * 10 + DIGIT[fracWord[idx]];
+        const frac = fracNum / Math.pow(10, fracWord.length);
+        const tok = { t: "num", v: intPart + frac, f: true, line, col: start - lineStart + 1 };
+        t.push(tok); i = k; continue;
+      }
       add("num", parseNumeral(src.slice(i, j)), start);
       i = j; continue;
     }
@@ -116,8 +128,15 @@ function lex(src) {
     if (/[0-9]/.test(c)) {
       const start = i;
       let j = i; while (j < src.length && /[0-9]/.test(src[j])) j++;
+      if (src[j] === "." && /[0-9]/.test(src[j + 1])) {
+        j++;
+        while (j < src.length && /[0-9]/.test(src[j])) j++;
+        t.push({ t: "num", v: parseFloat(src.slice(i, j)), f: true, line, col: start - lineStart + 1 });
+        i = j; continue;
+      }
       add("num", +src.slice(i, j), start); i = j; continue;
     }
+    if (BOOLS[c] !== undefined) { add("bool", BOOLS[c]); i++; continue; }
     if (KW[c]) { add("kw", c); i++; continue; }
     let op = null;
     for (const o of OPS) if (src.startsWith(o, i)) { op = o; break; }
@@ -146,7 +165,10 @@ function parse(toks) {
   function type() {
     if (at("kw", "量")) { p++; return "int"; }
     if (at("kw", "無")) { p++; return "void"; }
-    fail("期望类型 量/無");
+    if (at("kw", "字")) { p++; return "string"; }
+    if (at("kw", "占")) { p++; return "bool"; }
+    if (at("op", "分")) { p++; return "float"; }
+    fail("期望类型 量/無/字/占/分");
   }
   function block() {
     eat("op", "{");
@@ -164,16 +186,17 @@ function parse(toks) {
   }
   function stmt() {
     if (at("op", "{")) return block();
-    if (at("kw", "量")) {
-      p++; const name = eat("id").v;
-      if (at("op", "[")) {                     /* 数组声明：量 名[长度]; */
+    if (at("kw", "量") || at("kw", "字") || at("kw", "占") || at("op", "分")) {
+      const ty = type();
+      const name = eat("id").v;
+      if (at("op", "[")) {                     /* 类型化数组声明：量/分/字/占 名[长度]; */
         p++; const size = expr(); eat("op", "]"); eat("op", ";");
-        return { t: "arrdecl", name, size };
+        return { t: "arrdecl", name, size, type: ty };
       }
       let init = null;
       if (at("op", "=") || at("op", "隹")) { p++; init = expr(); }
       eat("op", ";");
-      return { t: "decl", name, init };
+      return { t: "decl", name, init, type: ty };
     }
     if (at("kw", "恒")) {
       p++; const name = eat("id").v;
@@ -200,11 +223,11 @@ function parse(toks) {
       p++; eat("op", "(");
       let init = null;
       if (!at("op", ";")) {
-        if (at("kw", "量")) {
-          p++; const n = eat("id").v;
+        if (at("kw", "量") || at("kw", "字") || at("kw", "占") || at("op", "分")) {
+          const ty = type(); const n = eat("id").v;
           if (at("op", "[")) { fail("從 的初始化里不支持数组声明"); }
           let e = null; if (at("op", "=") || at("op", "隹")) { p++; e = expr(); }
-          init = { t: "decl", name: n, init: e };
+          init = { t: "decl", name: n, init: e, type: ty };
         } else init = { t: "exprst", e: expr() };
       }
       eat("op", ";");
@@ -298,8 +321,9 @@ function parse(toks) {
     return a;
   }
   function primary() {
-    if (at("num")) { const v = toks[p++].v; return { t: "num", v }; }
+    if (at("num")) { const tok = toks[p++]; return { t: "num", v: tok.v, f: !!tok.f }; }
     if (at("str")) { const v = toks[p++].v; return { t: "str", v }; }
+    if (at("bool")) { const v = toks[p++].v; return { t: "bool", v }; }
     if (at("id")) { const v = toks[p++].v; return { t: "id", v }; }
     fail("表达式错误");
   }
@@ -325,100 +349,168 @@ function parse(toks) {
 
 /* ---------------------------- 语义检查 ---------------------------- */
 const BUILTINS = {
-  "屏": { argc: 0 },
-  "书": { argc: 1 },
-  "听": { argc: 0 },
-  "聽": { argc: 0 },   /* 甲骨字形别名 */
-  "歇": { argc: 1 },
+  "屏": { argc: 0, ret: "void" },
+  "书": { argc: 1, ret: "void" },
+  "听": { argc: 0, ret: "int" },
+  "聽": { argc: 0, ret: "int" },
+  "歇": { argc: 1, ret: "void" },
 };
 
 function check(ast) {
   const funcs = new Map();
   for (const f of ast.funcs) {
-    if (funcs.has(f.name)) throw new Error(`语义：函数重复定义「${f.name}」`);
-    if (BUILTINS[f.name]) throw new Error(`语义：函数名与内建冲突「${f.name}」`);
+    if (funcs.has(f.name)) throw new Error("语义：函数重复定义「" + f.name + "」");
+    if (BUILTINS[f.name]) throw new Error("语义：函数名与内建冲突「" + f.name + "」");
     funcs.set(f.name, f);
   }
   if (!funcs.has("貞")) throw new Error("语义：缺少入口函数「貞」（相当于 main）");
   let decls = 0;
   let loopDepth = 0;
+  const isNum = (ty) => ty === "int" || ty === "float";
+  const assignable = (dst, src) => dst === src || (dst === "float" && src === "int");
+  const fail = (msg) => { throw new Error("语义：" + msg); };
 
-  function walkExpr(e, scope) {
-    if (!e) return;
-    if (e.t === "num" || e.t === "str") return;
-    if (e.t === "id") {
-      const k = scope.get(e.v);
-      if (!k) throw new Error(`语义：未声明的变量「${e.v}」`);
-      if (k === "arr") throw new Error(`语义：数组「${e.v}」必须带下标使用`);
-      return;
+  function typeOf(e, scope) {
+    if (!e) return "void";
+    switch (e.t) {
+      case "num": return e.f ? "float" : "int";
+      case "bool": return "bool";
+      case "str": return "string";
+      case "id": {
+        const s = scope.get(e.v);
+        if (!s) fail("未声明的变量「" + e.v + "」");
+        if (s.kind === "arr") fail("数组「" + e.v + "」必须带下标使用");
+        return s.type;
+      }
+      case "index": {
+        const s = scope.get(e.name);
+        if (!s) fail("未声明的数组「" + e.name + "」");
+        if (s.kind !== "arr") fail("「" + e.name + "」不是数组");
+        if (typeOf(e.idx, scope) !== "int") fail("数组下标必须是 量（int）");
+        return s.elem;
+      }
+      case "un": {
+        const ty = typeOf(e.a, scope);
+        if (e.op === "!") { if (ty !== "bool") fail("! 需要 占（bool）"); return "bool"; }
+        if (!isNum(ty)) fail("负号需要数值，得到 " + ty);
+        return ty;
+      }
+      case "bin": {
+        const a = typeOf(e.a, scope), b = typeOf(e.b, scope);
+        const op = e.op;
+        if (op === "+") {
+          if (a === "string" || b === "string") {
+            if (a !== "string" || b !== "string") fail("字符串拼接需要两边都是 字（string）");
+            return "string";
+          }
+          if (!isNum(a) || !isNum(b)) fail("益 需要数值或字符串");
+          return (a === "float" || b === "float") ? "float" : "int";
+        }
+        if (op === "-" || op === "*" || op === "/") {
+          if (!isNum(a) || !isNum(b)) fail(op + " 需要数值");
+          return (a === "float" || b === "float") ? "float" : "int";
+        }
+        if (op === "%") {
+          if (a !== "int" || b !== "int") fail("% 需要 量（int）");
+          return "int";
+        }
+        if (op === "==" || op === "!=") {
+          const ok = a === b || (isNum(a) && isNum(b));
+          if (!ok) fail("比较类型不一致：" + a + " 与 " + b);
+          return "bool";
+        }
+        if (op === "<" || op === ">" || op === "<=" || op === ">=") {
+          if (!isNum(a) || !isNum(b)) fail("大小比较需要数值");
+          return "bool";
+        }
+        if (op === "&&" || op === "||") {
+          if (a !== "bool" || b !== "bool") fail("且/或 需要 占（bool）");
+          return "bool";
+        }
+        fail("未知运算符 " + op);
+      }
+      case "call": {
+        if (e.callee.t !== "id") fail("只能调用具名函数");
+        const name = e.callee.v;
+        const f = funcs.get(name);
+        const b = BUILTINS[name];
+        if (f) {
+          if (e.args.length !== f.params.length) fail("函数「" + name + "」需要 " + f.params.length + " 个参数，给了 " + e.args.length + " 个");
+          for (let i = 0; i < e.args.length; i++) {
+            const at = typeOf(e.args[i], scope);
+            if (!assignable(f.params[i].type, at)) fail("函数「" + name + "」第 " + (i + 1) + " 个参数需要 " + f.params[i].type + "，得到 " + at);
+          }
+          return f.ret;
+        }
+        if (b) {
+          if (e.args.length !== b.argc) fail("内建「" + name + "」需要 " + b.argc + " 个参数，给了 " + e.args.length + " 个");
+          for (const a of e.args) typeOf(a, scope);
+          return b.ret;
+        }
+        fail("未定义的函数「" + name + "」");
+      }
+      default: fail("未知表达式 " + e.t);
     }
-    if (e.t === "index") {
-      const k = scope.get(e.name);
-      if (!k) throw new Error(`语义：未声明的数组「${e.name}」`);
-      if (k !== "arr") throw new Error(`语义：「${e.name}」不是数组`);
-      walkExpr(e.idx, scope);
-      return;
-    }
-    if (e.t === "bin") { walkExpr(e.a, scope); walkExpr(e.b, scope); return; }
-    if (e.t === "un") { walkExpr(e.a, scope); return; }
-    if (e.t === "call") {
-      if (e.callee.t !== "id") throw new Error("语义：只能调用具名函数");
-      const f = funcs.get(e.callee.v);
-      const b = BUILTINS[e.callee.v];
-      if (f) {
-        if (e.args.length !== f.params.length) throw new Error(`语义：函数「${f.name}」需要 ${f.params.length} 个参数，给了 ${e.args.length} 个`);
-      } else if (b) {
-        if (e.args.length !== b.argc) throw new Error(`语义：内建「${e.callee.v}」需要 ${b.argc} 个参数，给了 ${e.args.length} 个`);
-      } else throw new Error(`语义：未定义的函数「${e.callee.v}」`);
-      for (const a of e.args) walkExpr(a, scope);
-      return;
-    }
-    throw new Error(`语义：未知表达式 ${e.t}`);
+  }
+
+  function condType(e, scope, where) {
+    const ty = typeOf(e, scope);
+    if (ty !== "bool") fail(where + " 需要 占（bool），得到 " + ty);
   }
 
   function walkScope(body, scope, fn) {
     for (const s of body) {
       if (s.t === "decl") {
-        if (scope.has(s.name)) throw new Error(`语义：变量重复声明「${s.name}」`);
-        scope.set(s.name, "int");
-        if (s.init) walkExpr(s.init, scope);
+        if (scope.has(s.name)) fail("变量重复声明「" + s.name + "」");
+        if (s.init) {
+          const ty = typeOf(s.init, scope);
+          if (!assignable(s.type, ty)) fail("变量「" + s.name + "」类型 " + s.type + " 不能接收 " + ty);
+        }
+        scope.set(s.name, { type: s.type, kind: "var" });
         decls++;
       } else if (s.t === "constdecl") {
-        if (scope.has(s.name)) throw new Error(`语义：名字重复声明「${s.name}」`);
-        walkExpr(s.init, scope);
-        scope.set(s.name, "const");
+        if (scope.has(s.name)) fail("名字重复声明「" + s.name + "」");
+        const ty = typeOf(s.init, scope);
+        scope.set(s.name, { type: ty, kind: "const" });
         decls++;
       } else if (s.t === "arrdecl") {
-        if (scope.has(s.name)) throw new Error(`语义：变量重复声明「${s.name}」`);
-        walkExpr(s.size, scope);
-        scope.set(s.name, "arr");
+        if (scope.has(s.name)) fail("变量重复声明「" + s.name + "」");
+        if (typeOf(s.size, scope) !== "int") fail("数组长度必须是 量（int）");
+        scope.set(s.name, { type: "arr", kind: "arr", elem: s.type });
         decls++;
       } else if (s.t === "assign") {
-        const t = s.target;
-        if (t.t === "id") {
-          const k = scope.get(t.v);
-          if (!k) throw new Error(`语义：未声明的变量「${t.v}」`);
-          if (k === "arr") throw new Error(`语义：不能整体赋值数组「${t.v}」`);
-          if (k === "const") throw new Error(`语义：常量「${t.v}」不可赋值`);
-          if (s.op !== "=") throw new Error("语义：暂不支持复合赋值（用 名 = 名 + 值）");
+        const tgt = s.target;
+        if (s.op !== "=") fail("暂不支持复合赋值（用 名 = 名 益 值）");
+        if (tgt.t === "id") {
+          const e = scope.get(tgt.v);
+          if (!e) fail("未声明的变量「" + tgt.v + "」");
+          if (e.kind === "arr") fail("不能整体赋值数组「" + tgt.v + "」");
+          if (e.kind === "const") fail("常量「" + tgt.v + "」不可赋值");
+          const ty = typeOf(s.value, scope);
+          if (!assignable(e.type, ty)) fail("变量「" + tgt.v + "」类型 " + e.type + " 不能接收 " + ty);
         } else {
-          const k = scope.get(t.name);
-          if (!k) throw new Error(`语义：未声明的数组「${t.name}」`);
-          if (k !== "arr") throw new Error(`语义：「${t.name}」不是数组`);
-          if (s.op !== "=") throw new Error("语义：数组成员不支持 += / -=（用 名[下标] = 值）");
-          walkExpr(t.idx, scope);
+          const e = scope.get(tgt.name);
+          if (!e) fail("未声明的数组「" + tgt.name + "」");
+          if (e.kind !== "arr") fail("「" + tgt.name + "」不是数组");
+          if (typeOf(tgt.idx, scope) !== "int") fail("数组下标必须是 量（int）");
+          const ty = typeOf(s.value, scope);
+          if (!assignable(e.elem, ty)) fail("数组「" + tgt.name + "」元素类型 " + e.elem + " 不能接收 " + ty);
         }
-        walkExpr(s.value, scope);
-      } else if (s.t === "print" || s.t === "assert") {
-        for (const a of s.args) walkExpr(a, scope);
+      } else if (s.t === "print") {
+        for (const a of s.args) typeOf(a, scope);
+      } else if (s.t === "assert") {
+        for (const a of s.args) {
+          const ty = typeOf(a, scope);
+          if (ty !== "bool" && ty !== "int") fail("卜 需要 占（bool）或 量（int）");
+        }
       } else if (s.t === "exprst") {
-        walkExpr(s.e, scope);
+        typeOf(s.e, scope);
       } else if (s.t === "if") {
-        walkExpr(s.c, scope);
+        condType(s.c, scope, "若");
         walkScope(s.then.body, new Map(scope), fn);
         if (s.els) walkScope(s.els.body, new Map(scope), fn);
       } else if (s.t === "while") {
-        walkExpr(s.c, scope);
+        condType(s.c, scope, "復");
         loopDepth++;
         walkScope(s.body.body, new Map(scope), fn);
         loopDepth--;
@@ -426,31 +518,42 @@ function check(ast) {
         const inner = new Map(scope);
         if (s.init) {
           if (s.init.t === "decl") {
-            if (inner.has(s.init.name)) throw new Error(`语义：变量重复声明「${s.init.name}」`);
-            inner.set(s.init.name, "int");
-            if (s.init.init) walkExpr(s.init.init, inner);
-          } else walkExpr(s.init.e, inner);
+            if (inner.has(s.init.name)) fail("变量重复声明「" + s.init.name + "」");
+            if (s.init.init) {
+              const ty = typeOf(s.init.init, inner);
+              if (!assignable(s.init.type, ty)) fail("变量「" + s.init.name + "」类型 " + s.init.type + " 不能接收 " + ty);
+            }
+            inner.set(s.init.name, { type: s.init.type, kind: "var" });
+          } else typeOf(s.init.e, inner);
         }
-        if (s.cond) walkExpr(s.cond, inner);
+        if (s.cond) condType(s.cond, inner, "從");
         if (s.step) {
           if (s.step.t === "assignstep") {
-            const k = inner.get(s.step.name);
-            if (!k) throw new Error(`语义：未声明的变量「${s.step.name}」`);
-            if (k === "arr") throw new Error(`语义：不能整体赋值数组「${s.step.name}」`);
-            if (k === "const") throw new Error(`语义：常量「${s.step.name}」不可赋值`);
-            walkExpr(s.step.value, new Map(inner));
-          } else walkExpr(s.step, new Map(inner));
+            const e = inner.get(s.step.name);
+            if (!e) fail("未声明的变量「" + s.step.name + "」");
+            if (e.kind === "arr") fail("不能整体赋值数组「" + s.step.name + "」");
+            if (e.kind === "const") fail("常量「" + s.step.name + "」不可赋值");
+            if (!isNum(e.type)) fail("步进变量需要数值");
+            const ty = typeOf(s.step.value, new Map(inner));
+            if (!assignable(e.type, ty)) fail("变量「" + s.step.name + "」类型 " + e.type + " 不能接收 " + ty);
+          } else typeOf(s.step, new Map(inner));
         }
         loopDepth++;
         walkScope(s.body.body, inner, fn);
         loopDepth--;
       } else if (s.t === "break") {
-        if (loopDepth === 0) throw new Error("语义：止（break）只能写在循环里");
+        if (loopDepth === 0) fail("止（break）只能写在循环里");
       } else if (s.t === "continue") {
-        if (loopDepth === 0) throw new Error("语义：续（continue）只能写在循环里");
+        if (loopDepth === 0) fail("续（continue）只能写在循环里");
       } else if (s.t === "ret") {
-        if (fn.ret === "void" && s.e) throw new Error(`语义：无返回值函数「${fn.name}」不能 歸 值`);
-        if (s.e) walkExpr(s.e, scope);
+        if (fn.ret === "void") {
+          if (s.e) fail("无返回值函数「" + fn.name + "」不能 歸 值");
+        } else if (!s.e) {
+          fail("函数「" + fn.name + "」需要返回 " + fn.ret);
+        } else {
+          const ty = typeOf(s.e, scope);
+          if (!assignable(fn.ret, ty)) fail("函数「" + fn.name + "」返回类型 " + fn.ret + "，得到 " + ty);
+        }
       }
     }
   }
@@ -458,8 +561,8 @@ function check(ast) {
   for (const f of ast.funcs) {
     const scope = new Map();
     for (const x of f.params) {
-      if (scope.has(x.name)) throw new Error(`语义：参数重名「${x.name}」`);
-      scope.set(x.name, "int");
+      if (scope.has(x.name)) fail("参数重名「" + x.name + "」");
+      scope.set(x.name, { type: x.type, kind: "var" });
     }
     walkScope(f.body.body, scope, f);
   }
@@ -469,7 +572,7 @@ function check(ast) {
 /* ---------------------------- 字节码 ---------------------------- */
 const OP = {
   PUSH: 0x01, PUSHS: 0x02, LOAD: 0x03, STORE: 0x04, POP: 0x05,
-  NEWARR: 0x06, LOADIDX: 0x07, STOREIDX: 0x08,
+  NEWARR: 0x06, LOADIDX: 0x07, STOREIDX: 0x08, DEFAULT: 0x09, PUSHF: 0x0a, PUSHBOOL: 0x0b,
   ADD: 0x10, SUB: 0x11, MUL: 0x12, DIV: 0x13, MOD: 0x14, NEG: 0x15, NOT: 0x16,
   EQ: 0x20, NE: 0x21, LT: 0x22, LE: 0x23, GT: 0x24, GE: 0x25, AND: 0x26, OR: 0x27,
   JMP: 0x30, JZ: 0x31, JNZ: 0x32,
@@ -488,7 +591,8 @@ function compile(ast, funcs) {
 
   function expr(ch, e, scope) {
     if (!e) return;
-    if (e.t === "num") return emit(ch, OP.PUSH, e.v);
+    if (e.t === "num") return emit(ch, e.f ? OP.PUSHF : OP.PUSH, e.v);
+    if (e.t === "bool") return emit(ch, OP.PUSHBOOL, e.v ? 1 : 0);
     if (e.t === "str") return emit(ch, OP.PUSHS, strIdx(e.v));
     if (e.t === "id") {
       const s = scope.get(e.v);
@@ -522,12 +626,12 @@ function compile(ast, funcs) {
         const slot = slotCount++;
         scope.set(s.name, slot);
         if (s.init) { expr(ch, s.init, scope); emit(ch, OP.STORE, slot); }
-        else { emit(ch, OP.PUSH, 0); emit(ch, OP.STORE, slot); }
+        else { emit(ch, OP.DEFAULT, { int: 0, float: 1, string: 2, bool: 3 }[s.type || "int"]); emit(ch, OP.STORE, slot); }
       } else if (s.t === "arrdecl") {
         const slot = slotCount++;
         scope.set(s.name, slot);
         expr(ch, s.size, scope);
-        emit(ch, OP.NEWARR, null);
+        emit(ch, OP.NEWARR, { int: 0, float: 1, string: 2, bool: 3 }[s.type || "int"]);
         emit(ch, OP.STORE, slot);
       } else if (s.t === "assign") {
         const t = s.target;
@@ -711,11 +815,32 @@ async function vm(prog, opts = {}) {
   const MAX_DEPTH = 400;
   let steps = 0, depth = 0;
 
-  const printv = (v) => (typeof v === "string" ? v : String(v));
+  const isF = (v) => v !== null && typeof v === "object" && v.__kind === "float";
+  const mkF = (n) => ({ __kind: "float", v: n });
+  const fval = (v) => (isF(v) ? v.v : v);
+  const fmtVal = (v) => {
+    if (typeof v === "string") return v;
+    if (typeof v === "boolean") return v ? "吉" : "非";
+    if (isF(v)) {
+      const n = v.v;
+      let s2 = n.toFixed(6).replace(/0+$/, "").replace(/\\.$/, "");
+      return s2.indexOf(".") >= 0 ? s2 : s2 + ".0";
+    }
+    return String(v);
+  };
+  const printv = fmtVal;
+  const truthy = (v) => {
+    if (typeof v === "boolean") return v;
+    if (typeof v === "string") return v.length > 0;
+    if (isF(v)) return v.v !== 0;
+    if (typeof v === "number") return v !== 0;
+    throw new Error("运行：无法判断真假");
+  };
   const writeOut = (s) => { try { if (!silent) process.stdout.write(s); } catch (e) {} };
 
   function num(v, what) {
     if (typeof v !== "number" || !Number.isFinite(v)) throw new Error("运行：" + what + " 需要整数，得到 " + printv(v));
+    if (!Number.isInteger(v)) throw new Error("运行：" + what + " 需要整数，得到 " + v);
     return Math.trunc(v);
   }
 
@@ -733,13 +858,22 @@ async function vm(prog, opts = {}) {
         switch (ins.op) {
           case OP.PUSH: stack.push(ins.arg); pc++; break;
           case OP.PUSHS: stack.push(prog.strings[ins.arg]); pc++; break;
+          case OP.PUSHF: stack.push(mkF(ins.arg)); pc++; break;
+          case OP.PUSHBOOL: stack.push(!!ins.arg); pc++; break;
           case OP.LOAD: stack.push(frame.locals[ins.arg] ?? 0); pc++; break;
           case OP.STORE: frame.locals[ins.arg] = stack.pop(); pc++; break;
           case OP.POP: stack.pop(); pc++; break;
           case OP.NEWARR: {
             const n = num(stack.pop(), "数组长度");
             if (n < 0 || n > 1_000_000) throw new Error("运行：数组长度非法（" + n + "）");
-            stack.push(new Array(n).fill(0));
+            const ty = ins.arg | 0;
+            const fill = ty === 1 ? mkF(0) : ty === 2 ? "" : ty === 3 ? false : 0;
+            stack.push(new Array(n).fill(fill));
+            pc++; break;
+          }
+          case OP.DEFAULT: {
+            const ty = ins.arg | 0;
+            stack.push(ty === 1 ? mkF(0) : ty === 2 ? "" : ty === 3 ? false : 0);
             pc++; break;
           }
           case OP.LOADIDX: {
@@ -759,24 +893,47 @@ async function vm(prog, opts = {}) {
             a[i] = v;
             pc++; break;
           }
-          case OP.ADD: { const b = stack.pop(), a = stack.pop(); stack.push((a + b) | 0); pc++; break; }
-          case OP.SUB: { const b = stack.pop(), a = stack.pop(); stack.push((a - b) | 0); pc++; break; }
-          case OP.MUL: { const b = stack.pop(), a = stack.pop(); stack.push(Math.imul ? Math.imul(a, b) : a * b); pc++; break; }
-          case OP.DIV: { const b = stack.pop(), a = stack.pop(); if (b === 0) throw new Error("运行：除以零"); stack.push(Math.trunc(a / b)); pc++; break; }
+          case OP.ADD: {
+            const b = stack.pop(), a = stack.pop();
+            if (typeof a === "string" || typeof b === "string") {
+              if (typeof a !== "string" || typeof b !== "string") throw new Error("运行：字符串拼接两边都要是 字");
+              stack.push(a + b);
+            } else if (isF(a) || isF(b)) stack.push(mkF(fval(a) + fval(b)));
+            else stack.push((a + b) | 0);
+            pc++; break;
+          }
+          case OP.SUB: {
+            const b = stack.pop(), a = stack.pop();
+            if (isF(a) || isF(b)) stack.push(mkF(fval(a) - fval(b)));
+            else stack.push((a - b) | 0);
+            pc++; break;
+          }
+          case OP.MUL: {
+            const b = stack.pop(), a = stack.pop();
+            if (isF(a) || isF(b)) stack.push(mkF(fval(a) * fval(b)));
+            else stack.push(Math.imul ? Math.imul(a, b) : a * b);
+            pc++; break;
+          }
+          case OP.DIV: {
+            const b = stack.pop(), a = stack.pop();
+            if (isF(a) || isF(b)) { const d = fval(b); if (d === 0) throw new Error("运行：除以零"); stack.push(mkF(fval(a) / d)); }
+            else { if (b === 0) throw new Error("运行：除以零"); stack.push(Math.trunc(a / b)); }
+            pc++; break;
+          }
           case OP.MOD: { const b = stack.pop(), a = stack.pop(); if (b === 0) throw new Error("运行：除零取余"); stack.push(a % b); pc++; break; }
-          case OP.NEG: stack.push(-stack.pop()); pc++; break;
-          case OP.NOT: stack.push(stack.pop() ? 0 : 1); pc++; break;
-          case OP.EQ: { const b = stack.pop(), a = stack.pop(); stack.push(a === b ? 1 : 0); pc++; break; }
-          case OP.NE: { const b = stack.pop(), a = stack.pop(); stack.push(a !== b ? 1 : 0); pc++; break; }
-          case OP.LT: { const b = stack.pop(), a = stack.pop(); stack.push(a < b ? 1 : 0); pc++; break; }
-          case OP.LE: { const b = stack.pop(), a = stack.pop(); stack.push(a <= b ? 1 : 0); pc++; break; }
-          case OP.GT: { const b = stack.pop(), a = stack.pop(); stack.push(a > b ? 1 : 0); pc++; break; }
-          case OP.GE: { const b = stack.pop(), a = stack.pop(); stack.push(a >= b ? 1 : 0); pc++; break; }
-          case OP.AND: { const b = stack.pop(), a = stack.pop(); stack.push(a && b ? 1 : 0); pc++; break; }
-          case OP.OR: { const b = stack.pop(), a = stack.pop(); stack.push(a || b ? 1 : 0); pc++; break; }
+          case OP.NEG: { const a = stack.pop(); stack.push(isF(a) ? mkF(-a.v) : -a); pc++; break; }
+          case OP.NOT: { const a = stack.pop(); stack.push(!truthy(a)); pc++; break; }
+          case OP.EQ: { const b = stack.pop(), a = stack.pop(); stack.push(eqVal(a, b)); pc++; break; }
+          case OP.NE: { const b = stack.pop(), a = stack.pop(); stack.push(!eqVal(a, b)); pc++; break; }
+          case OP.LT: { const b = stack.pop(), a = stack.pop(); stack.push(fval(a) < fval(b)); pc++; break; }
+          case OP.LE: { const b = stack.pop(), a = stack.pop(); stack.push(fval(a) <= fval(b)); pc++; break; }
+          case OP.GT: { const b = stack.pop(), a = stack.pop(); stack.push(fval(a) > fval(b)); pc++; break; }
+          case OP.GE: { const b = stack.pop(), a = stack.pop(); stack.push(fval(a) >= fval(b)); pc++; break; }
+          case OP.AND: { const b = stack.pop(), a = stack.pop(); stack.push(truthy(a) && truthy(b)); pc++; break; }
+          case OP.OR: { const b = stack.pop(), a = stack.pop(); stack.push(truthy(a) || truthy(b)); pc++; break; }
           case OP.JMP: pc = ins.arg; break;
-          case OP.JZ: pc = stack.pop() ? pc + 1 : ins.arg; break;
-          case OP.JNZ: pc = stack.pop() ? ins.arg : pc + 1; break;
+          case OP.JZ: pc = truthy(stack.pop()) ? pc + 1 : ins.arg; break;
+          case OP.JNZ: pc = truthy(stack.pop()) ? ins.arg : pc + 1; break;
           case OP.CALL: {
             const args2 = [];
             for (let i = 0; i < ins.arg.argc; i++) args2.unshift(stack.pop());
@@ -801,7 +958,7 @@ async function vm(prog, opts = {}) {
           }
           case OP.ASSERT: {
             const v = stack.pop();
-            const line = v ? "合" : "不合";
+            const line = truthy(v) ? "合" : "不合";
             out.push(line);
             writeOut(line + "\n");
             pc++; break;
@@ -815,6 +972,12 @@ async function vm(prog, opts = {}) {
     }
   }
 
+  function eqVal(a, b) {
+    if (typeof a === "string" || typeof b === "string") return a === b;
+    if (typeof a === "boolean" || typeof b === "boolean") return a === b;
+    return fval(a) === fval(b);
+  }
+
   async function callBuiltin(name, args) {
     if (name === "屏") {
       if (process.stdout.isTTY) {
@@ -826,6 +989,7 @@ async function vm(prog, opts = {}) {
     if (name === "书") {
       const v = args[0];
       if (typeof v === "string") writeOut(v);
+      else if (isF(v) || typeof v === "boolean") writeOut(fmtVal(v));
       else {
         const cp = num(v, "书");
         if (cp < 0 || cp > 0x10ffff) throw new Error("运行：书 的字符码越界（" + cp + "）");
@@ -863,6 +1027,9 @@ function listing(prog) {
     c.code.forEach((ins, i) => {
       let arg = "";
       if (ins.op === OP.PUSH) arg = String(ins.arg);
+      else if (ins.op === OP.PUSHF) arg = String(ins.arg);
+      else if (ins.op === OP.PUSHBOOL) arg = ins.arg ? "吉" : "非";
+      else if (ins.op === OP.NEWARR || ins.op === OP.DEFAULT) arg = ["int", "float", "string", "bool"][ins.arg] || String(ins.arg);
       else if (ins.op === OP.PUSHS) arg = "#" + ins.arg;
       else if (ins.op === OP.LOAD || ins.op === OP.STORE) arg = "s" + ins.arg;
       else if (ins.op === OP.CALL) arg = ins.arg.fn + "/" + ins.arg.argc;
@@ -937,6 +1104,7 @@ const PNG_MARK = {
   "-": '<path d="M5 12h14"/>', "/": '<path d="M7 19L17 5"/>',
   "0": '<circle cx="12" cy="12" r="6.2"/>',
   "续": '<path d="M5 16c4 0 7-2 9-5"/><path d="M12 8l3 3-4 1"/>',
+  "·": '<circle cx="12" cy="13" r="1.8"/>',
 };
 const pngMark = (ch) => '<span class="mk"><svg viewBox="0 0 24 24">' + (PNG_MARK[ch] || '<path d="M6 12h12"/>') + "</svg></span>";
 
@@ -1364,7 +1532,7 @@ var FONT = new Set(Array.from(${JSON.stringify(fontChars)}));
 var els = function(id){ return document.getElementById(id); };
 var srcEl = els("src"), outEl = els("out"), jcbEl = els("jcb"), oracleEl = els("oracle"), lineEl = els("line"), statsEl = els("stats"), chip = els("chipState");
 var pngWrap = els("pngWrap"), pngEl = els("png"), dlEl = els("dl"), hlEl = els("hl"), gutterEl = els("gutter");
-var KW_SET = new Set(["量","無","歸","若","弗","復","從","言","卜","止","续","恒","引","吉","貞"]);
+var KW_SET = new Set(["量","無","歸","若","弗","復","從","言","卜","止","续","恒","引","字","占"]);
 var OP_SET = new Set(["隹","益","去","乘","分","不","且","或"]);
 var NUM_SET = new Set(["零","一","二","三","四","五","六","七","八","九","十","百","千","兩"]);
 function setChip(t, ok){ chip.textContent = t; chip.style.background = ok ? "rgba(47,93,67,.55)" : "rgba(138,43,26,.5)"; }
@@ -1677,7 +1845,9 @@ function printHelp() {
   console.log("    言 输出   卜 占断     吉 1       貞 入口");
   console.log("    隹 赋值/相等（＝）     益 加（＋）   去 减（－）   乘 乘（×）   分 除（÷）");
   console.log("    不隹 不等（≠）   且/或 与/或（&& ||）   止 break   续 continue");
-  console.log("    引 模块名（lib/模块名.jcp）    恒 常量 隹 值");
+  console.log("    类型：量 int · 分 float · 字 string · 占 bool（数组同理）");
+  console.log("    浮点：三·一四 / 3.14    布尔：對 / 非    恒 常量 隹 值");
+  console.log("    引 模块名（lib/模块名.jcp）");
   console.log("    标准库：引 學;（大 小 方 正 余）  引 卜;（卜 隨機）");
   console.log("    多位数：十六 / 二十 / 一百零五；  < > <= >= % 仍用符号");
   console.log("");
