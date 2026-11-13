@@ -27,7 +27,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const BUILD_DIR = process.env.JCP_BUILD || path.join(HERE, "build");
 
 /* ---------------------------- 现代编译器基础设施 ---------------------------- */
-const VERSION = "0.10.0";
+const VERSION = "0.11.0";
 const COLOR = !!process.stdout.isTTY && !process.env.NO_COLOR;
 const paint = (s, code) => (COLOR ? "\x1b[" + code + "m" + s + "\x1b[0m" : s);
 
@@ -1498,33 +1498,42 @@ const GUI_HTML = (fontB64, fontChars, version) => `<!doctype html>
 <html lang="zh"><head><meta charset="utf-8"><title>甲骨 C++ GUI</title>
 <style>
 @font-face{font-family:"Oracular";src:url(data:font/woff2;base64,${fontB64}) format("woff2");font-display:swap}
-:root{--bg:#15110c;--paper:#f4ecdd;--ink:#2b2118;--brown:#6b5741;--rust:#8a3a22;--green:#2f5d43;--dark:#241d14}
+:root{--bg:#15110c;--paper:#f4ecdd;--ink:#2b2118;--brown:#6b5741;--rust:#8a3a22;--green:#2f5d43;--dark:#241d14;--gold:#d8b26a}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{background:radial-gradient(1200px 700px at 50% -10%,#2d261b 0%,var(--bg) 62%);color:#e9e0cc;font-family:ui-serif,"Songti SC","SimSun",serif;display:flex;flex-direction:column;height:100vh;overflow:hidden}
-header{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid rgba(180,150,110,.18);flex-wrap:wrap}
+header{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid rgba(180,150,110,.18);flex-wrap:wrap}
 .brand{font-size:15px;letter-spacing:.18em;color:#f3ead6}
-.brand b{color:#d8b26a}
+.brand b{color:var(--gold)}
 .sub{font-size:11px;color:#9d8a6d}
-.chips{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+.chips{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .chip{font-size:11px;padding:3px 9px;border-radius:999px;background:rgba(180,150,110,.16);color:#d8c9a8}
-main{display:flex;gap:12px;padding:12px;flex:1;min-height:0}
+button.icon{width:26px;height:24px;padding:0;font-size:12px;line-height:1}
+main{display:flex;gap:10px;padding:10px;flex:1;min-height:0}
 main>.panel{flex:1 1 0;min-width:0}
-@media(max-width:760px){main{flex-direction:column;overflow:auto}main>.panel{min-height:280px}}
+@media(max-width:680px){main{flex-direction:column;overflow:auto}main>.panel{min-height:300px}}
 .panel{background:linear-gradient(160deg,#faf3e3,#ede0c8);color:var(--ink);border-radius:12px;display:flex;flex-direction:column;min-height:0;overflow:hidden;box-shadow:0 18px 50px rgba(0,0,0,.45), inset 0 0 60px rgba(120,86,48,.08)}
-.panel h2{margin:0;padding:9px 12px;font-size:12px;letter-spacing:.16em;color:var(--brown);font-weight:600;border-bottom:1px solid rgba(120,96,64,.22);display:flex;align-items:center;gap:8px}
-.panel h2 .mini{margin-left:auto;font-size:10px;letter-spacing:.06em;color:#8d7a5c;font-weight:400}
-.toolbar{display:flex;gap:6px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid rgba(120,96,64,.18);align-items:center}
-button{appearance:none;border:1px solid rgba(120,96,64,.38);background:rgba(255,252,244,.55);color:var(--ink);border-radius:7px;padding:5px 11px;font:inherit;font-size:12px;cursor:pointer;transition:.15s}
+.panel h2{margin:0;padding:8px 12px;font-size:12px;letter-spacing:.14em;color:var(--brown);font-weight:600;border-bottom:1px solid rgba(120,96,64,.22);display:flex;align-items:center;gap:8px}
+.panel h2 .mini{margin-left:auto;font-size:10px;letter-spacing:.04em;color:#8d7a5c;font-weight:400}
+.dirty{color:var(--rust)}
+.toolbar{display:flex;gap:5px;flex-wrap:wrap;padding:7px 9px;border-bottom:1px solid rgba(120,96,64,.18);align-items:center}
+.toolbar .sep{width:1px;height:18px;background:rgba(120,96,64,.25);margin:0 3px}
+button{appearance:none;border:1px solid rgba(120,96,64,.38);background:rgba(255,252,244,.55);color:var(--ink);border-radius:7px;padding:4px 10px;font:inherit;font-size:12px;cursor:pointer;transition:.15s}
 button:hover{background:#fffaf0}
 button.primary{background:var(--rust);border-color:var(--rust);color:#fdf6e8}
 button.primary:hover{filter:brightness(1.08)}
 button.gen{background:var(--green);border-color:var(--green);color:#f2fbf5}
-select{font:inherit;font-size:12px;padding:5px 8px;border-radius:7px;border:1px solid rgba(120,96,64,.38);background:#fffaf0;color:var(--ink);max-width:190px}
-.editor{flex:1;display:flex;min-height:0;background:#fffaf0;overflow:hidden}
+button.ghost{background:transparent}
+select{font:inherit;font-size:12px;padding:4px 8px;border-radius:7px;border:1px solid rgba(120,96,64,.38);background:#fffaf0;color:var(--ink);max-width:170px}
+.row{display:flex;gap:8px;padding:7px 10px;border-top:1px solid rgba(120,96,64,.18);align-items:center}
+.row label{font-size:11px;color:var(--brown);white-space:nowrap}
+.row input{flex:1;border:1px solid rgba(120,96,64,.3);border-radius:6px;padding:4px 8px;font:12px ui-monospace,monospace;background:#fffaf0;color:var(--ink);outline:none}
+.editor{flex:1;display:flex;min-height:0;background:#fffaf0;overflow:hidden;position:relative}
 .gutter{width:46px;padding:10px 6px 10px 0;text-align:right;font:13.5px/1.75 ui-monospace,Consolas,"Courier New",monospace;color:#a08a68;background:rgba(120,96,64,.09);overflow:hidden;user-select:none;flex-shrink:0}
-.gutter div{height:23.63px}
+.gutter div{height:23.63px;padding-right:2px}
+.gutter div.errline{background:rgba(178,58,42,.16);color:#8a2b1a;border-radius:3px}
 .codebox{position:relative;flex:1;min-height:0;overflow:hidden}
+.curline{position:absolute;left:0;right:0;height:23.63px;background:rgba(216,178,106,.14);pointer-events:none;display:none}
 .codebox pre{position:absolute;inset:0;margin:0;padding:10px 12px;overflow:auto;pointer-events:none;font:13.5px/1.75 ui-monospace,Consolas,"Courier New",monospace;white-space:pre-wrap;word-break:break-all;color:#2b2118;background:transparent;tab-size:4}
 .codebox textarea{position:absolute;inset:0;width:100%;height:100%;padding:10px 12px;border:0;outline:none;resize:none;background:transparent;color:transparent;caret-color:#8a3a22;font:13.5px/1.75 ui-monospace,Consolas,"Courier New",monospace;white-space:pre-wrap;word-break:break-all;tab-size:4}
 .tok-kw{color:#8a3a22;font-weight:600}
@@ -1533,21 +1542,21 @@ select{font:inherit;font-size:12px;padding:5px 8px;border-radius:7px;border:1px 
 .tok-str{color:#2f4a6b}
 .tok-cmt{color:#9a8a6a;font-style:italic}
 .tok-fn{color:#4a3f7a}
-.row{display:flex;gap:8px;padding:8px 10px;border-top:1px solid rgba(120,96,64,.18);align-items:center}
-.row label{font-size:11px;color:var(--brown)}
-.row input{flex:1;border:1px solid rgba(120,96,64,.3);border-radius:6px;padding:5px 8px;font:12px ui-monospace,monospace;background:#fffaf0;color:var(--ink);outline:none}
-.tabs{display:flex;gap:4px;padding:6px 10px 0;border-bottom:1px solid rgba(120,96,64,.18)}
-.tab{font-size:11px;padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid transparent;cursor:pointer;color:#7a6648}
-.tab.on{background:#241d14;color:#e9e0cc;border-color:#241d14}
-pre{flex:1;min-height:120px;margin:0;padding:10px 12px;overflow:auto;font:12px/1.65 ui-monospace,Consolas,monospace;background:#241d14;color:#e8e0cc;white-space:pre-wrap}
-.stats{padding:6px 10px;font-size:11px;color:var(--brown);border-bottom:1px solid rgba(120,96,64,.18);min-height:26px;word-break:break-all}
-.ac{display:flex;flex-wrap:wrap;gap:5px;padding:6px 10px;border-top:1px solid rgba(120,96,64,.18);background:#fff8ec;max-height:88px;overflow:auto}
+.findbar{position:absolute;top:4px;right:6px;display:none;gap:4px;align-items:center;background:#fff8ec;border:1px solid rgba(120,96,64,.35);border-radius:8px;padding:3px 6px;z-index:5;box-shadow:0 6px 18px rgba(0,0,0,.15)}
+.findbar input{width:120px;border:1px solid rgba(120,96,64,.3);border-radius:5px;padding:2px 6px;font:12px ui-monospace,monospace;background:#fffdf6;outline:none}
+.findbar button{padding:2px 7px;font-size:11px}
+.ac{display:flex;flex-wrap:wrap;gap:5px;padding:6px 9px;border-top:1px solid rgba(120,96,64,.18);background:#fff8ec;max-height:84px;overflow:auto}
 .ac[hidden]{display:none}
-.acitem{display:flex;align-items:baseline;gap:5px;border:1px solid rgba(120,96,64,.3);background:#fffdf6;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer}
+.acitem{display:flex;align-items:baseline;gap:5px;border:1px solid rgba(120,96,64,.3);background:#fffdf6;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer}
 .acitem b{color:#8a3a22;font-size:12px}
 .acitem span{color:#8d7a5c;font-size:10px}
 .acitem.on{background:#241d14;color:#e9e0cc;border-color:#241d14}
-.acitem.on b{color:#f0c98a}.acitem.on span{color:#b9a888}
+.acitem.on b{color:var(--gold)}.acitem.on span{color:#b9a888}
+.tabs{display:flex;gap:4px;padding:6px 10px 0;border-bottom:1px solid rgba(120,96,64,.18);align-items:center}
+.tab{font-size:11px;padding:4px 10px;border-radius:7px 7px 0 0;border:1px solid transparent;cursor:pointer;color:#7a6648}
+.tab.on{background:#241d14;color:#e9e0cc;border-color:#241d14}
+.stats{padding:5px 10px;font-size:11px;color:var(--brown);border-bottom:1px solid rgba(120,96,64,.18);min-height:24px;word-break:break-all}
+pre{flex:1;min-height:120px;margin:0;padding:10px 12px;overflow:auto;font:12px/1.65 ui-monospace,Consolas,monospace;background:#241d14;color:#e8e0cc;white-space:pre-wrap}
 .err{color:#b23a2a}
 .ok{color:#2f6b47}
 .oracle{flex:1;overflow:auto;padding:12px;display:flex;flex-direction:row-reverse;gap:9px;align-items:flex-start;background:radial-gradient(120% 60% at 40% 10%,#fdf8ea,#f0e3ca 60%,#e4d0ac);border-radius:0 0 12px 12px}
@@ -1555,32 +1564,67 @@ pre{flex:1;min-height:120px;margin:0;padding:10px 12px;overflow:auto;font:12px/1
 .vcol .zi{font-family:"Oracular",ui-serif,serif;font-size:23px;line-height:1.12;color:#2e1f0e;text-shadow:0 1px 0 rgba(255,252,240,.7)}
 .vcol .mk{width:18px;height:18px;display:flex;align-items:center;justify-content:center;color:#4a3622;font:15px ui-monospace,monospace}
 .vcol .gap{height:8px}
-#pngWrap{flex:1;display:none;align-items:center;justify-content:center;background:#1c1710;overflow:auto;position:relative}
-#png{max-width:100%;max-height:100%;object-fit:contain}
-footer{padding:6px 16px 10px;font-size:11px;color:#8d7a5c}
+#pngWrap{flex:1;display:none;flex-direction:column;align-items:center;justify-content:center;background:#1c1710;overflow:auto;position:relative;gap:8px}
+#png{max-width:100%;max-height:calc(100% - 44px);object-fit:contain;transform-origin:center}
+.pngtools{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center}
+.statusbar{display:flex;align-items:center;gap:14px;padding:5px 12px;border-top:1px solid rgba(180,150,110,.18);font-size:11px;color:#9d8a6d;flex-wrap:wrap}
+.statusbar b{color:#d8c9a8;font-weight:600}
+.modal{position:fixed;inset:0;background:rgba(10,8,6,.6);display:none;align-items:center;justify-content:center;z-index:20}
+.modal.on{display:flex}
+.modal .box{width:min(560px,92vw);max-height:76vh;background:#faf3e3;color:var(--ink);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.55)}
+.modal h3{margin:0;padding:10px 14px;font-size:12px;letter-spacing:.12em;color:var(--brown);border-bottom:1px solid rgba(120,96,64,.25);display:flex;align-items:center}
+.modal h3 button{margin-left:auto}
+.modal .body{padding:10px 12px;overflow:auto;font-size:12px}
+.filelist{display:flex;flex-direction:column;gap:4px}
+.fileitem{display:flex;gap:10px;align-items:center;padding:6px 9px;border:1px solid rgba(120,96,64,.22);border-radius:7px;cursor:pointer;background:#fffdf6}
+.fileitem:hover{background:#fff6e4}
+.fileitem .nm{font-family:ui-monospace,monospace;font-size:12px;color:var(--ink)}
+.fileitem .tag{font-size:10px;color:#fff;background:var(--brown);border-radius:999px;padding:1px 7px}
+.fileitem .sz{margin-left:auto;font-size:10px;color:#8d7a5c}
+.kbdlist{line-height:1.9;font-size:12px;color:#3a2c1c}
+.kbdlist kbd{border:1px solid rgba(120,96,64,.35);border-radius:4px;padding:0 4px;font:11px ui-monospace,monospace;background:#fffdf6}
+#toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:rgba(36,29,20,.95);color:#f3ead6;font-size:12px;padding:8px 16px;border-radius:999px;opacity:0;pointer-events:none;transition:.25s;z-index:30;border:1px solid rgba(216,178,106,.35)}
+#toast.on{opacity:1}
+footer{padding:4px 14px 8px;font-size:10px;color:#7f6e54}
 </style></head><body>
 <header>
   <div class="brand">甲 骨 <b>C++</b> · GUI</div>
-  <div class="sub">本地编译器服务 · v${version}</div>
-  <div class="chips"><span class="chip" id="chipState">就绪</span><span class="chip">恒 / 引 / 模块</span><span class="chip">行号 · 高亮 · 补全</span></div>
+  <div class="sub">本地编译器工作台 · v${version}</div>
+  <div class="chips">
+    <span class="chip" id="chipState">就绪</span>
+    <span class="chip">模块 · 类型 · 标准库</span>
+    <span class="chip">行号 · 高亮 · 补全</span>
+    <button class="ghost" id="btnShortcuts" title="快捷键">⌨</button>
+  </div>
 </header>
 <main>
   <section class="panel">
-    <h2>源码 <span class="mini">Ctrl+Enter 运行 · Ctrl+G 出图 · 支持 引 模块 / 恒 常量</span></h2>
+    <h2><span id="fileName">(未命名)</span> <span class="dirty" id="dirtyDot" hidden>●</span> <span class="mini">Ctrl+S 保存 · Ctrl+O 打开 · Ctrl+F 查找</span></h2>
     <div class="toolbar">
-      <select id="examples"><option value="">— 载入示例 —</option></select>
+      <select id="examples"><option value="">— 示例 —</option></select>
+      <button id="btnNew">新建</button>
+      <button id="btnOpen">打开</button>
+      <button id="btnSave">保存</button>
+      <button id="btnSaveAs">另存</button>
+      <span class="sep"></span>
       <button id="btnRun" class="primary">运行</button>
       <button id="btnCheck">检查</button>
       <button id="btnPng" class="gen">生成甲骨图</button>
-      <button id="btnSavePng">保存 PNG 到桌面</button>
       <button id="btnClear">清空</button>
     </div>
     <div class="row"><label>输入（给 听 用）</label><input id="stdin" placeholder="如 dddddq（贪吃蛇按键）"></div>
     <div class="editor">
       <div class="gutter" id="gutter"></div>
       <div class="codebox">
+        <div class="curline" id="curline"></div>
         <pre id="hl" aria-hidden="true"></pre>
         <textarea id="src" spellcheck="false"></textarea>
+        <div class="findbar" id="findbar">
+          <input id="findInput" placeholder="查找…">
+          <button id="findPrev">上一个</button>
+          <button id="findNext">下一个</button>
+          <button id="findClose">×</button>
+        </div>
       </div>
     </div>
     <div class="ac" id="ac" hidden></div>
@@ -1590,29 +1634,109 @@ footer{padding:6px 16px 10px;font-size:11px;color:#8d7a5c}
     <div class="tabs">
       <div class="tab on" data-tab="out">运行输出</div>
       <div class="tab" data-tab="jcb">JCB1 字节码</div>
-      <div class="tab" data-tab="oracle">甲骨预览（竖排·右起）</div>
+      <div class="tab" data-tab="oracle">甲骨预览</div>
       <div class="tab" data-tab="pngtab">PNG</div>
+      <button class="ghost" id="btnCopyOut" style="margin-left:auto">复制输出</button>
     </div>
     <div class="stats" id="line"></div>
-    <pre id="out">点「运行」编译并在内置虚拟机里跑。</pre>
+    <pre id="out">点「运行」编译并在内置虚拟机里跑；Ctrl+Enter 也可运行。</pre>
     <pre id="jcb" style="display:none"></pre>
     <div class="oracle" id="oracle" style="display:none"></div>
-    <div id="pngWrap"><img id="png" alt="甲骨程序图"><a id="dl" download="jiagu.png" style="position:absolute;top:8px;right:12px;color:#d8b26a;font-size:12px">下载 PNG</a></div>
+    <div id="pngWrap">
+      <div class="pngtools">
+        <button id="pngDesktop">保存 PNG 到桌面</button>
+        <a id="dl" download="jiagu.png"><button>下载 PNG</button></a>
+        <button id="pngIn">放大</button>
+        <button id="pngOut">缩小</button>
+        <button id="pngFit">适应</button>
+      </div>
+      <img id="png" alt="甲骨程序图">
+    </div>
   </section>
 </main>
-<footer>本地服务 · 仅监听 127.0.0.1 · 自动出图需要本机 Edge/Chrome · 保存 PNG 默认写到桌面</footer>
+<div class="statusbar">
+  <span>行 <b id="stLine">1</b> : 列 <b id="stCol">1</b></span>
+  <span>字符 <b id="stChars">0</b></span>
+  <span>文件 <b id="stFile">(未命名)</b></span>
+  <span><b id="stSaved">已保存</b></span>
+  <span id="stMsg"></span>
+  <span style="margin-left:auto">jcp ${version} · 127.0.0.1 本地服务</span>
+</div>
+<footer>本地服务仅监听 127.0.0.1 · 自动出图需要 Edge/Chrome · Ctrl+Enter 运行 · Ctrl+G 出图</footer>
+
+<div class="modal" id="fileModal"><div class="box">
+  <h3>打开程序 <button class="ghost" id="fileModalClose">×</button></h3>
+  <div class="body"><div class="filelist" id="fileList"></div></div>
+</div></div>
+<div class="modal" id="helpModal"><div class="box">
+  <h3>快捷键 <button class="ghost" id="helpModalClose">×</button></h3>
+  <div class="body kbdlist">
+    <div><kbd>Ctrl</kbd>+<kbd>Enter</kbd> 运行 &nbsp; <kbd>F5</kbd> 运行</div>
+    <div><kbd>Ctrl</kbd>+<kbd>G</kbd> 生成甲骨图 &nbsp; <kbd>Ctrl</kbd>+<kbd>S</kbd> 保存</div>
+    <div><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 另存 &nbsp; <kbd>Ctrl</kbd>+<kbd>O</kbd> 打开</div>
+    <div><kbd>Ctrl</kbd>+<kbd>N</kbd> 新建 &nbsp; <kbd>Ctrl</kbd>+<kbd>F</kbd> 查找</div>
+    <div><kbd>Ctrl</kbd>+<kbd>Space</kbd> 自动补全 &nbsp; <kbd>Ctrl</kbd>+<kbd>1..4</kbd> 切换视图</div>
+    <div><kbd>Tab</kbd> 缩进 4 格 &nbsp; <kbd>Ctrl</kbd>+<kbd>/</kbd> 行注释</div>
+    <div>自动缩进、括号/引号配对；拖动文件到编辑器可载入</div>
+  </div>
+</div></div>
+<div id="toast"></div>
 <script>
 var FONT = new Set(Array.from(${JSON.stringify(fontChars)}));
 var els = function(id){ return document.getElementById(id); };
 var srcEl = els("src"), outEl = els("out"), jcbEl = els("jcb"), oracleEl = els("oracle"), lineEl = els("line"), statsEl = els("stats"), chip = els("chipState");
 var pngWrap = els("pngWrap"), pngEl = els("png"), dlEl = els("dl"), hlEl = els("hl"), gutterEl = els("gutter");
 var acEl = els("ac"), acItems = [], acIndex = 0, acToken = null;
-var KW_SET = new Set(["量","無","歸","若","弗","復","從","言","卜","止","续","恒","引","字","占"]);
+var curlineEl = els("curline"), findbar = els("findbar"), findInput = els("findInput");
+var state = { file: "", dirty: false, generating: false, pngScale: 1 };
+var KW_SET = new Set(["量","無","歸","若","弗","復","從","言","卜","止","续","恒","引","字","占","吉","貞"]);
 var OP_SET = new Set(["隹","益","去","乘","分","不","且","或"]);
 var NUM_SET = new Set(["零","一","二","三","四","五","六","七","八","九","十","百","千","兩"]);
-function setChip(t, ok){ chip.textContent = t; chip.style.background = ok ? "rgba(47,93,67,.55)" : "rgba(138,43,26,.5)"; }
+var LINE_H = 23.63, PAD_T = 10;
+var VOCAB = [
+  {w:"量",d:"int"},{w:"分",d:"float"},{w:"字",d:"string"},{w:"占",d:"bool"},
+  {w:"無",d:"void"},{w:"歸",d:"return"},{w:"若",d:"if"},{w:"弗",d:"else"},
+  {w:"復",d:"while"},{w:"從",d:"for"},{w:"止",d:"break"},{w:"续",d:"continue"},
+  {w:"恒",d:"常量"},{w:"引",d:"模块"},{w:"言",d:"输出"},{w:"卜",d:"占断"},{w:"貞",d:"入口"},
+  {w:"隹",d:"赋值/相等"},{w:"益",d:"加/拼接"},{w:"去",d:"减"},{w:"乘",d:"乘"},
+  {w:"不隹",d:"不等"},{w:"且",d:"与"},{w:"或",d:"或"},{w:"對",d:"真"},{w:"非",d:"假"},
+  {w:"文長",d:"字长度"},{w:"取文",d:"取子串"},{w:"解文",d:"字→量"},{w:"解浮",d:"字→分"},
+  {w:"屏",d:"清屏"},{w:"书",d:"原样输出"},{w:"听",d:"读键"},{w:"歇",d:"等待"},
+  {w:"大",d:"库:最大"},{w:"小",d:"库:最小"},{w:"方",d:"平方"},{w:"正",d:"绝对值"},{w:"余",d:"余数"},{w:"共",d:"数组和"},{w:"兆",d:"随机"}
+];
 function esc(s){ return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
-function markFor(ch){ return '<span class="mk">' + esc(ch === " " ? "·" : ch) + '</span>'; }
+function toast(msg, ok){
+  var t = els("toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toast._t); toast._t = setTimeout(function(){ t.classList.remove("on"); }, 1800);
+}
+function setChip(t, ok){ chip.textContent = t; chip.style.background = ok ? "rgba(47,93,67,.55)" : "rgba(138,43,26,.5)"; }
+function setMsg(s){ els("stMsg").textContent = s || ""; }
+function setSaved(txt){ els("stSaved").textContent = txt; }
+function setDirty(v){
+  state.dirty = v;
+  els("dirtyDot").hidden = !v;
+  setSaved(v ? "未保存" : "已保存");
+}
+function fileName(){ return state.file || "(未命名)"; }
+function refreshFileNames(){
+  els("fileName").textContent = fileName();
+  els("stFile").textContent = fileName();
+}
+function status(){
+  var pos = srcEl.selectionStart, v = srcEl.value;
+  var before = v.slice(0, pos);
+  var line = before.split("\\n").length;
+  var col = pos - before.lastIndexOf("\\n");
+  els("stLine").textContent = line;
+  els("stCol").textContent = col;
+  els("stChars").textContent = v.length;
+  if (!state.dirty && v !== state.savedText) setDirty(true);
+  showCurline(line);
+}
+function showCurline(line){
+  curlineEl.style.display = "block";
+  curlineEl.style.top = (PAD_T + (line - 1) * LINE_H - srcEl.scrollTop) + "px";
+}
 function highlightLine(line){
   var s = "", j = 0;
   while (j < line.length) {
@@ -1649,23 +1773,52 @@ function renderOracle(src){
       var ch = line[j];
       if (ch === " ") col += '<span class="gap"></span>';
       else if (/[\\u3400-\\u9fff]/.test(ch) && FONT.has(ch)) col += '<span class="zi">' + ch + '</span>';
-      else col += markFor(ch);
+      else col += '<span class="mk">' + esc(ch === " " ? "·" : ch) + '</span>';
     }
     html += '<div class="vcol">' + col + '</div>';
   }
   oracleEl.innerHTML = html;
 }
-var VOCAB = [
-  {w:"量",d:"int"},{w:"分",d:"float"},{w:"字",d:"string"},{w:"占",d:"bool"},
-  {w:"無",d:"void"},{w:"歸",d:"return"},{w:"若",d:"if"},{w:"弗",d:"else"},
-  {w:"復",d:"while"},{w:"從",d:"for"},{w:"止",d:"break"},{w:"续",d:"continue"},
-  {w:"恒",d:"常量"},{w:"引",d:"模块"},{w:"言",d:"输出"},{w:"卜",d:"占断"},{w:"貞",d:"入口"},
-  {w:"隹",d:"赋值/相等"},{w:"益",d:"加/拼接"},{w:"去",d:"减"},{w:"乘",d:"乘"},
-  {w:"不隹",d:"不等"},{w:"且",d:"与"},{w:"或",d:"或"},{w:"對",d:"真"},{w:"非",d:"假"},
-  {w:"文長",d:"字长度"},{w:"取文",d:"取子串"},{w:"解文",d:"字→量"},{w:"解浮",d:"字→分"},
-  {w:"屏",d:"清屏"},{w:"书",d:"原样输出"},{w:"听",d:"读键"},{w:"歇",d:"等待"},
-  {w:"大",d:"库:最大"},{w:"小",d:"库:最小"},{w:"方",d:"库:平方"},{w:"正",d:"库:绝对值"},{w:"余",d:"库:余数"},{w:"共",d:"库:数组和"},{w:"兆",d:"库:随机"}
-];
+function updateEditor(){
+  var src = srcEl.value;
+  var lines = src.split("\\n");
+  hlEl.innerHTML = lines.map(highlightLine).join("\\n") + "\\n";
+  var g = "";
+  for (var i = 1; i <= lines.length; i++) g += '<div data-line="' + i + '">' + i + "</div>";
+  gutterEl.innerHTML = g;
+  renderOracle(src);
+  status();
+  saveLocal();
+}
+function syncScroll(){
+  hlEl.scrollTop = srcEl.scrollTop; hlEl.scrollLeft = srcEl.scrollLeft;
+  gutterEl.scrollTop = srcEl.scrollTop;
+  status();
+}
+function markError(line){
+  var nodes = gutterEl.querySelectorAll("div");
+  nodes.forEach(function(n){ n.classList.remove("errline"); });
+  if (!line) return;
+  var node = gutterEl.querySelector('[data-line="' + line + '"]');
+  if (node) node.classList.add("errline");
+}
+function jumpToLine(line){
+  var lines = srcEl.value.split("\\n");
+  if (line < 1 || line > lines.length) return;
+  var pos = 0;
+  for (var i = 0; i < line - 1; i++) pos += lines[i].length + 1;
+  srcEl.focus();
+  srcEl.setSelectionRange(pos, pos + lines[line - 1].length);
+  scrollCaret();
+  status();
+}
+function scrollCaret(){
+  var line = srcEl.value.slice(0, srcEl.selectionStart).split("\\n").length;
+  var target = (line - 1) * LINE_H;
+  if (target < srcEl.scrollTop) srcEl.scrollTop = Math.max(0, target - 2 * LINE_H);
+  else if (target > srcEl.scrollTop + srcEl.clientHeight - 2 * LINE_H) srcEl.scrollTop = target - srcEl.clientHeight + 2 * LINE_H;
+  syncScroll();
+}
 function tokenAtCaret(){
   var pos = srcEl.selectionStart, v = srcEl.value, s = pos;
   while (s > 0) {
@@ -1682,7 +1835,7 @@ function paintAC(){
   nodes.forEach(function(n, i){ n.classList.toggle("on", i === acIndex); });
   if (nodes[acIndex]) { try { nodes[acIndex].scrollIntoView({ block: "nearest" }); } catch (e) {} }
 }
-function updateAC(force){
+function updateAC(){
   var tok = tokenAtCaret();
   if (!tok) { hideAC(); return; }
   var q = tok.text;
@@ -1707,20 +1860,109 @@ acEl.addEventListener("click", function(e){
     node = node.parentNode;
   }
 });
-
-function updateEditor(){
-  var src = srcEl.value;
-  var lines = src.split("\\n");
-  hlEl.innerHTML = lines.map(highlightLine).join("\\n") + "\\n";
-  var g = "";
-  for (var i = 1; i <= lines.length; i++) g += "<div>" + i + "</div>";
-  gutterEl.innerHTML = g;
-  renderOracle(src);
+function insertText(txt){
+  var s = srcEl.selectionStart, e = srcEl.selectionEnd, v = srcEl.value;
+  srcEl.value = v.slice(0, s) + txt + v.slice(e);
+  var p = s + txt.length;
+  srcEl.setSelectionRange(p, p);
+  updateEditor(); setDirty(true);
 }
-function syncScroll(){
-  hlEl.scrollTop = srcEl.scrollTop; hlEl.scrollLeft = srcEl.scrollLeft;
-  gutterEl.scrollTop = srcEl.scrollTop;
+function autoIndent(){
+  var pos = srcEl.selectionStart, v = srcEl.value;
+  var lineStart = v.lastIndexOf("\\n", pos - 1) + 1;
+  var cur = v.slice(lineStart, pos);
+  var m = cur.match(/^[ \\t]*/);
+  insertText("\\n" + (m ? m[0] : ""));
 }
+function toggleComment(){
+  var v = srcEl.value, s = srcEl.selectionStart, e = srcEl.selectionEnd;
+  var ls = v.lastIndexOf("\\n", s - 1) + 1;
+  var le = v.indexOf("\\n", e); if (le < 0) le = v.length;
+  var block = v.slice(ls, le);
+  var lines = block.split("\\n");
+  var all = lines.every(function(l){ return l.trim() === "" || l.trim().indexOf("；") === 0; });
+  var out = lines.map(function(l){ return all ? l.replace(/^([ \\t]*)；/, "$1") : (l.trim() ? "；" + l : l); }).join("\\n");
+  srcEl.value = v.slice(0, ls) + out + v.slice(le);
+  srcEl.setSelectionRange(ls, ls + out.length);
+  updateEditor(); setDirty(true);
+}
+async function api(path, body){
+  var r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
+  return await r.json();
+}
+function saveLocal(){
+  try { localStorage.setItem("jcp.gui.code", srcEl.value); localStorage.setItem("jcp.gui.file", state.file || ""); } catch (e) {}
+}
+function loadLocal(){
+  try {
+    var code = localStorage.getItem("jcp.gui.code");
+    if (code !== null && code !== "") {
+      srcEl.value = code;
+      state.file = localStorage.getItem("jcp.gui.file") || "";
+      updateEditor();
+      setDirty(true);
+      toast("已恢复上次代码");
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+async function doRun(){
+  setChip("编译中…", false); outEl.textContent = "…"; markError(0);
+  try {
+    var d = await api("/api/run", { src: srcEl.value, input: els("stdin").value });
+    if (!d.ok) {
+      outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>';
+      lineEl.textContent = d.line ? ("第 " + d.line + " 行" + (d.col ? "，第 " + d.col + " 列" : "")) : "";
+      markError(d.line); jumpToLine(d.line);
+      setChip("编译错误", false); setMsg("编译失败");
+      return;
+    }
+    outEl.textContent = d.output || "（无输出）";
+    jcbEl.textContent = d.bytecode || "";
+    lineEl.textContent = "退出码 " + d.exit + (d.error ? "（运行错误：" + d.error + "）" : "");
+    statsEl.textContent = d.ins + " 条指令 · 槽位 " + d.slots + " · " + d.funcs + " 个函数";
+    setChip("运行完成", true); setMsg("运行完成");
+  } catch (e) { outEl.innerHTML = '<span class="err">' + esc(e.message) + '</span>'; setChip("出错", false); }
+}
+async function doCheck(){
+  setChip("检查中…", false);
+  try {
+    var d = await api("/api/check", { src: srcEl.value });
+    if (d.ok) {
+      setChip("检查通过", true);
+      lineEl.textContent = "词法 " + d.tokens + " 令牌 · 字节码 " + d.ins + " 条";
+      outEl.textContent = "✓ 词法 / 语法 / 语义 / 字节码 全部通过";
+      markError(0);
+    } else {
+      setChip("检查失败", false);
+      outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>';
+      lineEl.textContent = d.line ? ("第 " + d.line + " 行") : "";
+      markError(d.line); jumpToLine(d.line);
+    }
+  } catch (e) { setChip("出错", false); }
+}
+async function doPng(){
+  if (state.generating) return;
+  state.generating = true; setChip("刻图中…", false);
+  try {
+    var d = await api("/api/png", { src: srcEl.value, title: "龜卜龜食" });
+    if (!d.ok) { outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; setChip("出图失败", false); return; }
+    pngEl.src = d.png; dlEl.href = d.png; setPngScale(1); showTab("pngtab");
+    setChip("已生成 PNG", true); setMsg("PNG 已生成");
+  } catch (e) { setChip("出错", false); } finally { state.generating = false; }
+}
+async function doSavePng(){
+  setChip("保存中…", false);
+  try {
+    var d = await api("/api/png-save", { src: srcEl.value, title: "龜卜龜食" });
+    if (!d.ok) { outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; setChip("保存失败", false); return; }
+    lineEl.textContent = "已保存：" + d.path;
+    setChip("已保存到桌面", true); toast("PNG 已保存：" + d.path);
+    if (d.png) { pngEl.src = d.png; dlEl.href = d.png; showTab("pngtab"); }
+  } catch (e) { setChip("保存失败", false); }
+}
+function setPngScale(v){ state.pngScale = Math.max(0.3, Math.min(3, v)); pngEl.style.maxWidth = (state.pngScale * 100) + "%"; }
 function showTab(name){
   document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("on", t.getAttribute("data-tab") === name); });
   outEl.style.display = name === "out" ? "block" : "none";
@@ -1729,77 +1971,157 @@ function showTab(name){
   pngWrap.style.display = name === "pngtab" ? "flex" : "none";
 }
 document.querySelectorAll(".tab").forEach(function(t){ t.addEventListener("click", function(){ showTab(t.getAttribute("data-tab")); }); });
-async function api(path, body){
-  var r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body || {}) });
-  return await r.json();
+async function refreshFiles(){
+  var list = [];
+  try { list = await (await fetch("/api/files")).json(); } catch (e) {}
+  var box = els("fileList");
+  box.innerHTML = list.length ? list.map(function(f){
+    return '<div class="fileitem" data-name="' + esc(f.name) + '" data-dir="' + esc(f.dir) + '"><span class="tag">' + (f.dir === "save" ? "程序" : "示例") + '</span><span class="nm">' + esc(f.name) + '</span><span class="sz">' + Math.round(f.size / 1024 * 10) / 10 + ' KB</span></div>';
+  }).join("") : '<div style="color:#8d7a5c">（没有文件）</div>';
+  box.querySelectorAll(".fileitem").forEach(function(n){
+    n.onclick = async function(){
+      var d = await (await fetch("/api/load?name=" + encodeURIComponent(n.getAttribute("data-name")) + "&dir=" + encodeURIComponent(n.getAttribute("data-dir")))).json();
+      if (d.ok) {
+        srcEl.value = d.source; state.file = d.name; state.savedText = d.source; setDirty(false);
+        refreshFileNames(); updateEditor(); els("fileModal").classList.remove("on");
+        toast("已打开 " + d.name + "（" + (n.getAttribute("data-dir") === "save" ? "程序" : "示例") + "）");
+      } else toast("打开失败：" + d.error);
+    };
+  });
 }
-async function doRun(){
-  setChip("编译中…", false); outEl.textContent = "…";
-  try {
-    var d = await api("/api/run", { src: srcEl.value, input: els("stdin").value });
-    if (!d.ok) { outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; lineEl.textContent = d.line ? ("第 " + d.line + " 行" + (d.col ? "，第 " + d.col + " 列" : "")) : ""; setChip("编译错误", false); return; }
-    outEl.textContent = d.output || "（无输出）";
-    jcbEl.textContent = d.bytecode || "";
-    lineEl.textContent = "退出码 " + d.exit + (d.error ? "（运行错误：" + d.error + "）" : "");
-    statsEl.textContent = d.ins + " 条指令 · 槽位 " + d.slots + " · " + d.funcs + " 个函数";
-    setChip("运行完成", true);
-  } catch (e) { outEl.innerHTML = '<span class="err">' + esc(e.message) + '</span>'; setChip("出错", false); }
+async function openFileModal(){
+  els("fileModal").classList.add("on");
+  await refreshFiles();
 }
-async function doCheck(){
-  setChip("检查中…", false);
-  try {
-    var d = await api("/api/check", { src: srcEl.value });
-    if (d.ok) { setChip("检查通过", true); lineEl.textContent = "词法 " + d.tokens + " 令牌 · 字节码 " + d.ins + " 条"; outEl.textContent = "✓ 词法 / 语法 / 语义 / 字节码 全部通过"; }
-    else { setChip("检查失败", false); outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; lineEl.textContent = d.line ? ("第 " + d.line + " 行") : ""; }
-  } catch (e) { setChip("出错", false); }
+async function saveFile(asNew){
+  var defaultName = state.file ? state.file.replace(/\\.jcp$/, "") : "我的甲骨程序";
+  var name = defaultName;
+  if (asNew || !state.file) {
+    name = window.prompt("保存为（文件名，不含 .jcp）", defaultName);
+    if (!name) return;
+  }
+  var d = await api("/api/save", { name: name, src: srcEl.value });
+  if (d.ok) {
+    state.file = d.name; state.savedText = srcEl.value; setDirty(false);
+    refreshFileNames(); toast("已保存：" + d.path); setMsg("已保存");
+  } else toast("保存失败：" + d.error);
 }
-async function doPng(){
-  setChip("刻图中…", false);
-  try {
-    var d = await api("/api/png", { src: srcEl.value, title: "龜卜龜食" });
-    if (!d.ok) { outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; setChip("出图失败", false); return; }
-    pngEl.src = d.png; dlEl.href = d.png; showTab("pngtab"); setChip("已生成 PNG", true);
-  } catch (e) { setChip("出错", false); }
+function newFile(){
+  if (state.dirty && !window.confirm("当前内容未保存，仍要新建？")) return;
+  srcEl.value = ""; state.file = ""; updateEditor(); setDirty(false); refreshFileNames(); toast("已新建");
 }
-async function doSavePng(){
-  setChip("保存中…", false);
-  try {
-    var d = await api("/api/png-save", { src: srcEl.value, title: "龜卜龜食" });
-    if (!d.ok) { outEl.innerHTML = '<span class="err">' + esc(d.error) + '</span>'; setChip("保存失败", false); return; }
-    lineEl.textContent = "已保存：" + d.path;
-    setChip("已保存到桌面", true);
-    if (d.png) { pngEl.src = d.png; dlEl.href = d.png; showTab("pngtab"); }
-  } catch (e) { setChip("保存失败", false); }
+function updateFromEditor(){
+  updateEditor(); setDirty(true); hideAC();
 }
-els("btnRun").onclick = doRun; els("btnCheck").onclick = doCheck; els("btnPng").onclick = doPng; els("btnSavePng").onclick = doSavePng;
-els("btnClear").onclick = function(){ srcEl.value = ""; hideAC(); updateEditor(); };
-srcEl.addEventListener("input", function(){ updateEditor(); updateAC(); });
-srcEl.addEventListener("scroll", syncScroll);
-srcEl.addEventListener("keydown", function(e){
+function onKeyDown(e){
   if (!acEl.hidden) {
     if (e.key === "ArrowDown") { e.preventDefault(); acIndex = (acIndex + 1) % acItems.length; paintAC(); return; }
     if (e.key === "ArrowUp") { e.preventDefault(); acIndex = (acIndex - 1 + acItems.length) % acItems.length; paintAC(); return; }
     if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); chooseAC(acIndex); return; }
     if (e.key === "Escape") { hideAC(); return; }
   }
-  if ((e.ctrlKey || e.metaKey) && e.key === " ") { e.preventDefault(); updateAC(true); return; }
-  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); doRun(); }
-  if ((e.ctrlKey || e.metaKey) && (e.key === "g" || e.key === "G")) { e.preventDefault(); doPng(); }
-});
+  if (e.key === "Tab" && !e.ctrlKey && !e.altKey) { e.preventDefault(); insertText("    "); return; }
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); autoIndent(); return; }
+  if (e.key === "(" || e.key === "{" || e.key === "[") {
+    var pair = e.key === "(" ? ")" : e.key === "{" ? "}" : "]";
+    insertText(e.key + pair);
+    var p = srcEl.selectionStart - 1;
+    srcEl.setSelectionRange(p, p);
+    return;
+  }
+  if (e.key === "\\"") { insertText("\\"\\""); var q = srcEl.selectionStart - 1; srcEl.setSelectionRange(q, q); return; }
+  if (e.key === "「") { insertText("「」"); var q2 = srcEl.selectionStart - 1; srcEl.setSelectionRange(q2, q2); return; }
+  if (e.ctrlKey || e.metaKey) {
+    var k = (e.key || "").toLowerCase();
+    if (k === "s" && e.shiftKey) { e.preventDefault(); saveFile(true); return; }
+    if (k === "s") { e.preventDefault(); saveFile(false); return; }
+    if (k === "o") { e.preventDefault(); openFileModal(); return; }
+    if (k === "n") { e.preventDefault(); newFile(); return; }
+    if (k === "f") { e.preventDefault(); findbar.style.display = "flex"; findInput.focus(); findInput.select(); return; }
+    if (k === " ") { e.preventDefault(); updateAC(); return; }
+    if (k === "/") { e.preventDefault(); toggleComment(); return; }
+    if (k === "enter") { e.preventDefault(); doRun(); return; }
+    if (k === "g") { e.preventDefault(); doPng(); return; }
+    if (k >= "1" && k <= "4") { e.preventDefault(); showTab(["out", "jcb", "oracle", "pngtab"][+k - 1]); return; }
+  }
+  if (e.key === "F5") { e.preventDefault(); doRun(); return; }
+  if (e.key === "Escape") { findbar.style.display = "none"; hideAC(); }
+}
+els("btnNew").onclick = newFile;
+els("btnOpen").onclick = openFileModal;
+els("btnSave").onclick = function(){ saveFile(false); };
+els("btnSaveAs").onclick = function(){ saveFile(true); };
+els("btnRun").onclick = doRun; els("btnCheck").onclick = doCheck;
+els("btnPng").onclick = doPng; els("btnClear").onclick = function(){ if (srcEl.value && !window.confirm("清空当前代码？")) return; srcEl.value = ""; hideAC(); updateEditor(); setDirty(false); };
+els("btnCopyOut").onclick = function(){
+  var txt = (showTabActive() === "jcb" ? jcbEl.textContent : outEl.textContent) || "";
+  if (navigator.clipboard) navigator.clipboard.writeText(txt).then(function(){ toast("已复制"); }, function(){ toast("复制失败"); });
+};
+function showTabActive(){
+  var n = document.querySelector(".tab.on");
+  return n ? n.getAttribute("data-tab") : "out";
+}
+els("btnShortcuts").onclick = function(){ els("helpModal").classList.add("on"); };
+els("helpModalClose").onclick = function(){ els("helpModal").classList.remove("on"); };
+els("fileModalClose").onclick = function(){ els("fileModal").classList.remove("on"); };
+els("fileModal").onclick = function(e){ if (e.target === els("fileModal")) els("fileModal").classList.remove("on"); };
+els("helpModal").onclick = function(e){ if (e.target === els("helpModal")) els("helpModal").classList.remove("on"); };
+els("pngDesktop").onclick = doSavePng;
+els("pngIn").onclick = function(){ setPngScale(state.pngScale * 1.2); };
+els("pngOut").onclick = function(){ setPngScale(state.pngScale / 1.2); };
+els("pngFit").onclick = function(){ setPngScale(1); };
+els("findNext").onclick = function(){ findText(1); };
+els("findPrev").onclick = function(){ findText(-1); };
+els("findClose").onclick = function(){ findbar.style.display = "none"; };
+findInput.addEventListener("keydown", function(e){ if (e.key === "Enter") { e.preventDefault(); findText(e.shiftKey ? -1 : 1); } if (e.key === "Escape") findbar.style.display = "none"; });
+function findText(dir){
+  var q = findInput.value;
+  if (!q) return;
+  var v = srcEl.value, start = srcEl.selectionStart;
+  var at = dir > 0 ? v.indexOf(q, start + 1) : v.lastIndexOf(q, start - 1);
+  if (at < 0) { at = dir > 0 ? v.indexOf(q) : v.lastIndexOf(q); }
+  if (at < 0) { toast("未找到：" + q); return; }
+  srcEl.focus(); srcEl.setSelectionRange(at, at + q.length);
+  var line = v.slice(0, at).split("\\n").length;
+  scrollCaret(); status(); markError(0);
+}
 function loadExamples(){
   fetch("/api/examples").then(function(r){ return r.json(); }).then(function(list){
     var sel = els("examples");
     list.forEach(function(x){ var o = document.createElement("option"); o.value = x.name; o.textContent = x.title; sel.appendChild(o); });
     sel.onchange = function(){
       if (!sel.value) return;
-      fetch("/api/load?name=" + encodeURIComponent(sel.value)).then(function(r){ return r.json(); }).then(function(d){
-        if (d.ok) { srcEl.value = d.source; updateEditor(); setChip("已载入 " + d.name, true); }
+      fetch("/api/load?name=" + encodeURIComponent(sel.value) + "&dir=ex").then(function(r){ return r.json(); }).then(function(d){
+        if (d.ok) {
+          if (state.dirty && !window.confirm("当前内容未保存，仍要载入示例？")) { sel.value = ""; return; }
+          srcEl.value = d.source; state.file = d.name; state.savedText = d.source; setDirty(false);
+          refreshFileNames(); updateEditor(); sel.value = "";
+          toast("已载入示例 " + d.name);
+        }
       });
     };
   });
 }
+srcEl.addEventListener("input", function(){ updateEditor(); updateAC(); });
+srcEl.addEventListener("scroll", syncScroll);
+srcEl.addEventListener("keydown", onKeyDown);
+srcEl.addEventListener("keyup", status);
+srcEl.addEventListener("click", status);
+srcEl.addEventListener("dragover", function(e){ e.preventDefault(); });
+srcEl.addEventListener("drop", function(e){
+  e.preventDefault();
+  var f = e.dataTransfer.files && e.dataTransfer.files[0];
+  if (!f) return;
+  var reader = new FileReader();
+  reader.onload = function(){ srcEl.value = String(reader.result || ""); state.file = f.name.replace(/\\.jcp$/, ""); updateEditor(); setDirty(true); refreshFileNames(); toast("已载入 " + f.name); };
+  reader.readAsText(f, "utf-8");
+});
 loadExamples();
-fetch("/api/default").then(function(r){ return r.json(); }).then(function(d){ if (d.ok) { srcEl.value = d.source; updateEditor(); } });
+refreshFileNames();
+if (!loadLocal()) {
+  fetch("/api/default").then(function(r){ return r.json(); }).then(function(d){ if (d.ok && !srcEl.value) { srcEl.value = d.source; state.file = "san"; state.savedText = d.source; setDirty(false); refreshFileNames(); updateEditor(); } });
+} 
+setSaved("已保存");
 </script></body></html>
 `;
 
@@ -1831,15 +2153,28 @@ async function startGui(argv) {
   const fontB64 = getFontB64();
   if (!fontB64) throw new Error("找不到甲骨字体（可用 JCP_FONT 指定 orac.woff2 路径）");
   const html = GUI_HTML(fontB64, [...FONT].join(""), VERSION);
+  const SAVE_DIR = process.env.JCP_SRC_DIR || path.join(process.env.USERPROFILE || ((process.env.HOMEDRIVE || "") + (process.env.HOMEPATH || "")), "Documents", "甲骨C++程序");
+  try { fs.mkdirSync(SAVE_DIR, { recursive: true }); } catch (e) {}
   const demoFiles = (() => {
     try {
       return fs.readdirSync(HERE).filter((f) => f.endsWith(".jcp") && !f.startsWith("t-")).sort();
     } catch (e) { return []; }
   })();
-  const loadDemo = (name) => {
-    const f = path.join(HERE, name);
-    if (!demoFiles.includes(name)) throw new Error("没有这个示例：" + name);
-    return fs.readFileSync(f, "utf8");
+  const loadNamed = (name, dir) => {
+    const safe = String(name || "");
+    const low = safe.toLowerCase();
+    if (!low.endsWith(".jcp") || safe.indexOf("/") >= 0 || safe.indexOf(String.fromCharCode(92)) >= 0 || safe.indexOf("..") >= 0) throw new Error("非法文件名：" + name);
+    const cands = dir === "save" ? [path.join(SAVE_DIR, safe)] : dir === "ex" ? [path.join(HERE, safe)] : [path.join(HERE, safe), path.join(SAVE_DIR, safe)];
+    for (const p of cands) { try { if (fs.existsSync(p)) return fs.readFileSync(p, "utf8"); } catch (e) {} }
+    throw new Error("没有这个文件：" + safe);
+  };
+  const loadDemo = (name) => loadNamed(name, "ex");
+  const listFiles = () => {
+    const out = [];
+    const add = (full, tag) => { try { const st = fs.statSync(full); out.push({ name: path.basename(full), dir: tag, size: st.size, mtime: st.mtimeMs }); } catch (e) {} };
+    for (const f of demoFiles) add(path.join(HERE, f), "ex");
+    try { for (const f of fs.readdirSync(SAVE_DIR)) if (f.endsWith(".jcp")) add(path.join(SAVE_DIR, f), "save"); } catch (e) {}
+    return out.sort((a, b) => (b.dir === "save" ? 1 : 0) - (a.dir === "save" ? 1 : 0) || a.name.localeCompare(b.name));
   };
   const gui = async (src) => {
     const built = buildProgram(src, path.join(HERE, "gui.jcp"));
@@ -1872,8 +2207,14 @@ async function startGui(argv) {
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/load") {
-        try { json(res, 200, { ok: true, name: url.searchParams.get("name"), source: loadDemo(url.searchParams.get("name")) }); }
+        const nm = url.searchParams.get("name");
+        const dir = url.searchParams.get("dir") || "";
+        try { json(res, 200, { ok: true, name: nm, source: loadNamed(nm, dir) }); }
         catch (e) { json(res, 404, diagOf(e)); }
+        return;
+      }
+      if (req.method === "GET" && url.pathname === "/api/files") {
+        json(res, 200, listFiles());
         return;
       }
       if (req.method === "GET" && url.pathname === "/api/default") {
@@ -1881,9 +2222,22 @@ async function startGui(argv) {
         catch (e) { json(res, 200, { ok: false, error: e.message }); }
         return;
       }
-      if (req.method === "POST" && (url.pathname === "/api/run" || url.pathname === "/api/check" || url.pathname === "/api/png" || url.pathname === "/api/png-save")) {
+      if (req.method === "POST" && (url.pathname === "/api/run" || url.pathname === "/api/check" || url.pathname === "/api/png" || url.pathname === "/api/png-save" || url.pathname === "/api/save")) {
         const body = JSON.parse((await readBody(req)) || "{}");
         const src = String(body.src || "");
+        if (url.pathname === "/api/save") {
+          try {
+            let name = String(body.name || "").trim();
+            const bad = ["/", String.fromCharCode(92), ":", "*", "?", String.fromCharCode(34), "<", ">", "|"];
+            for (const ch of bad) name = name.split(ch).join("_");
+            if (!name) throw new Error("文件名为空");
+            if (!name.toLowerCase().endsWith(".jcp")) name += ".jcp";
+            const full = path.join(SAVE_DIR, name);
+            fs.writeFileSync(full, src, "utf8");
+            json(res, 200, { ok: true, name: name, path: full });
+          } catch (e) { json(res, 200, diagOf(e)); }
+          return;
+        }
         if (url.pathname === "/api/png-save") {
           try {
             const tmp = path.join(BUILD_DIR, "gui-save-" + Date.now() + ".png");
