@@ -1,0 +1,12 @@
+node_modules/
+tools/
+build/
+tmp-*/
+*.jcb
+*.tmp.png
+jcp.exe
+bundle.cjs
+sea-prep.blob
+sea-config.json
+png-*.html
+snake-bone.html
